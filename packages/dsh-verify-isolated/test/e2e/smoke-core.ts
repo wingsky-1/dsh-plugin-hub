@@ -9,6 +9,7 @@ import {
   SCRIPTS_DIR,
   TARGET_DSH_VERSION,
   scriptFile,
+  scriptSupportFiles,
   winCmdShimFor,
 } from "./smoke-support";
 
@@ -167,10 +168,14 @@ export function verifyCoreContract() {
 export function scriptTextContract() {
   describe("6b. verify-isolated.mjs 关键契约文本锚定", () => {
     let script;
+    let contractSrc;
     let coreSrc;
 
     beforeAll(() => {
       script = readFileSync(scriptFile, "utf8");
+      contractSrc = [script, ...scriptSupportFiles.map((file) => readFileSync(file, "utf8"))].join(
+        "\n",
+      );
       coreSrc = readFileSync(join(SCRIPTS_DIR, "lib", "verify-core.mjs"), "utf8");
     });
 
@@ -184,7 +189,7 @@ export function scriptTextContract() {
       "--json",
     ];
     it.each(optionContracts)("脚本含 %s 选项契约", (opt) => {
-      expect(script.includes(opt)).toBeTruthy();
+      expect(contractSrc.includes(opt)).toBeTruthy();
     });
 
     it("脚本含 B6 verdict.json 契约", () => {
@@ -219,7 +224,7 @@ export function scriptTextContract() {
       "非官方契约，不承诺实际生效",
     ];
     it.each(verdictFields)("verdict schema 含字段 %s", (field) => {
-      expect(script.includes(field)).toBeTruthy();
+      expect(contractSrc.includes(field)).toBeTruthy();
     });
 
     // 四重隔离语义锚定：
@@ -236,7 +241,7 @@ export function scriptTextContract() {
     });
 
     it("profile 初始化用显式 plugin list（不再依赖 add --help 隐式初始化）", () => {
-      expect(script.includes('["plugin", "--profile", profile, "list"]')).toBeTruthy();
+      expect(contractSrc.includes('["plugin", "--profile", profile, "list"]')).toBeTruthy();
     });
 
     // 用户可见契约文案（SKILL.md §5.1 自检清单与就绪/清理流程依赖）：
@@ -257,11 +262,11 @@ export function scriptTextContract() {
     });
 
     it("--no-build 缺产物报可操作错误", () => {
-      expect(script.includes("--no-build 但缺少构建产物")).toBeTruthy();
+      expect(contractSrc.includes("--no-build 但缺少构建产物")).toBeTruthy();
     });
 
     it("--no-build 陈旧产物 mtime 警告", () => {
-      expect(script.includes("源码比构建产物新")).toBeTruthy();
+      expect(contractSrc.includes("源码比构建产物新")).toBeTruthy();
     });
 
     it("dsh 清理先 SIGTERM、等待 5s，再 SIGKILL 兜底", () => {
@@ -460,7 +465,7 @@ export function earlyExitContract() {
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 const args = process.argv.slice(2);
-if (args.includes("--version")) { console.log("0.2.1-rc.2"); process.exit(0); }
+if (args.includes("--version")) { console.log("0.2.2-rc.1"); process.exit(0); }
 if (args[0] === "plugin" && args.includes("list")) {
   const i = args.indexOf("--profile");
   const dir = join(process.env.DSH_HOME, "profiles", args[i + 1]);

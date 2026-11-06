@@ -11,7 +11,7 @@
  * 本域没有 deps.ts，也没有端口持有者：全部输入由组合根按调用实参递入。
  * 宿主类型只取官方类型层（catalog 锁版，仅 import type）。
  */
-import type { AssembleContext, PromptAssembly } from "@deepseek-ai/dsh-system-prompt";
+import type { AssembleContext, PromptPresentation } from "@deepseek-ai/dsh-system-prompt";
 import type { LoggerPort } from "../shared/interface.ts";
 
 /**
@@ -21,10 +21,10 @@ import type { LoggerPort } from "../shared/interface.ts";
 export interface ErasureAssemblePort {
   onAssemble(
     handler: (
-      assembly: PromptAssembly,
+      assembly: PromptPresentation,
       context: AssembleContext,
-      next: () => Promise<PromptAssembly>,
-    ) => Promise<PromptAssembly>,
+      next: () => Promise<PromptPresentation>,
+    ) => Promise<PromptPresentation>,
   ): () => void;
 }
 

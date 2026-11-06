@@ -48,7 +48,7 @@ function makeDshInstall(
   tmp: string,
   name: string,
   clientSource: string,
-  versionOutput: string | null = "0.2.1-rc.2",
+  versionOutput: string | null = "0.2.2-rc.1",
   versionExitCode = 0,
 ) {
   const fixture = mkdtempSync(join(tmp, name));
@@ -188,7 +188,7 @@ function executePresetRuns(state: PresetState) {
   const clientSource =
     'const WELCOME_NOTICE_SETTINGS_NAMESPACE = "ui-settings-general";\nconst WELCOME_NOTICE_VERSION = "2099-01-01.1";';
   const legacyRejected = makeDshInstall(state.tmp, "rejected-legacy-", clientSource, "0.2.0-rc.2");
-  const tooNewVersion = makeDshInstall(state.tmp, "too-new-version-", clientSource, "0.2.2-rc.1");
+  const tooNewVersion = makeDshInstall(state.tmp, "too-new-version-", clientSource, "0.2.3-rc.1");
   const oldVersion = makeDshInstall(state.tmp, "old-version-", clientSource, "0.1.5-rc.1");
   const versionReadFailure = makeDshInstall(
     state.tmp,
@@ -250,9 +250,9 @@ export function presetWelcomeNoticeContract() {
       expect(state.legacyRejectedCase.report).toContain(`期望版本: ${TARGET_DSH_VERSION}`);
     });
 
-    it("越界版本 0.2.2-rc.1 被拒绝，不退化为 semver range", () => {
+    it("越界版本 0.2.3-rc.1 被拒绝，不退化为 semver range", () => {
       expect(state.tooNewVersionCase.status).toBe(2);
-      expect(state.tooNewVersionCase.report).toContain("实际版本: 0.2.2-rc.1");
+      expect(state.tooNewVersionCase.report).toContain("实际版本: 0.2.3-rc.1");
       expect(state.tooNewVersionCase.report).toContain(`期望版本: ${TARGET_DSH_VERSION}`);
     });
 
@@ -293,7 +293,7 @@ export function presetWelcomeNoticeContract() {
 
     it("目标 namespace+version 仍预置真实 settings，报告显式真实 namespace", () => {
       expect(state.validCase.status).toBe(0);
-      expect(state.validCase.report).toContain("0.2.1-rc.2");
+      expect(state.validCase.report).toContain("0.2.2-rc.1");
       expect(state.validCase.verdict.onboarding).toMatchObject({
         skip: true,
         source: "preset",

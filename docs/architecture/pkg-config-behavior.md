@@ -22,7 +22,7 @@
 
 ## 2. 唯一接线事实源
 
-官方 settings 存储的接线只有一份实现：[shared/settings-namespace.js](../../shared/settings-namespace.js)
+官方 settings 存储的接线只有一份实现：[shared/settings-namespace.js](../../shared/settings-namespace.ts)
 导出的 `installSettingsNamespace(ctx, ns, schema, entry, hooks)`
 （类型见配套的 `shared/settings-namespace.d.ts`）。各包不得自抄一份，
 notifier 与 lan-proxy 曾各复刻的 `warnLog` 已经统一到这个导出（见该文件顶部注释）。
@@ -59,10 +59,10 @@ notifier 与 lan-proxy 曾各复刻的 `warnLog` 已经统一到这个导出（�
 缺口：notifier 侧 settings 命名空间相关调用点本规格未逐行枚举，记为缺口，
 见第 9 节。
 
-## 3. lan-proxy 配置行为
+## 3. lan-proxy 配置行为（退役前历史）
 
-源码位置：`packages/dsh-lan-proxy/`，详见 [dsh-lan-proxy.md](dsh-lan-proxy.md)
-与 [包 README](../../packages/dsh-lan-proxy/README.md)。
+旧包源码位置：`packages/dsh-lan-proxy/`。架构快照见 [dsh-lan-proxy.md](dsh-lan-proxy.md)；
+该包已退役，当前迁移边界见 [lan-proxy 退役迁移](../migrations/dsh-lan-proxy.md)。
 
 ### 3.1 八段结构
 

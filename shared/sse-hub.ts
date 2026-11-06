@@ -94,6 +94,8 @@ export interface SseHubOptions {
 export interface SseHub {
   /** 注册一条 SSE 连接：入表 + 挂 close/error 监听。 */
   register(res: ServerResponse): void;
+  /** 立即从连接表移除并关闭；close 事件稍后到达时幂等。 */
+  unregister(res: ServerResponse): void;
   /** 向全部连接写一帧 text（调用方生成，通常经 sseData()）；判死收口在内部。 */
   broadcast(text: string): void;
   /** 当前连接数（语义 = 服务端未释放句柄数）。 */
@@ -229,6 +231,11 @@ export function createSseHub(options: SseHubOptions): SseHub {
     }
   }
 
+  /** 主动注销一条连接：先出表再关闭，不等 close 事件，停掉该连接的后续心跳/广播。 */
+  function unregister(res: ServerResponse): void {
+    evict(res, "close");
+  }
+
   /** 向全部连接写一帧 text（调用方生成）；判死收口在 writeFrame。 */
   function broadcast(text: string): void {
     for (const [res] of conns) {
@@ -300,6 +307,7 @@ export function createSseHub(options: SseHubOptions): SseHub {
 
   return {
     register,
+    unregister,
     broadcast,
     size,
     evictStats: evictStatsCopy,

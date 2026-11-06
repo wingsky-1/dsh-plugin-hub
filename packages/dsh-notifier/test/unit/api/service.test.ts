@@ -16,7 +16,15 @@ import { afterAll, afterEach, describe, expect, it } from "vitest";
 import type { ApiDeps, HostCapabilities, OutgoingFrame } from "../../../src/server/api/deps.ts";
 import type { StreamBuildPort } from "../../../src/server/api/impl/stream/type.ts";
 import { DEFAULT_CONFIG } from "../../../src/server/config/impl/model/index.ts";
-import { jsonReq, makeLogger, makeRegister, pollUntil, tempDshHome, wire } from "../../helpers.ts";
+import {
+  jsonReq,
+  makeLogger,
+  makeRegister,
+  makeRemoteAccess,
+  pollUntil,
+  tempDshHome,
+  wire,
+} from "../../helpers.ts";
 
 const home = tempDshHome();
 const { installApi, releaseApi } = await import("../../../src/server/api/interface.ts");
@@ -220,6 +228,7 @@ function makeDeps(faults: Faults = {}) {
     register,
     frames: frames.port,
     logger,
+    remote: makeRemoteAccess(),
     config: {
       readConfig: () => ({ ...DEFAULT_CONFIG }),
       readSettingsView: () => ({

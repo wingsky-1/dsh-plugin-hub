@@ -24,7 +24,11 @@ import { readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { ServerResponse } from "node:http";
 import type { Context } from "@deepseek-ai/cordis";
-import { sseData } from "../../../../shared/host-utils.js";
+import {
+  liveConnectionAdmission,
+  liveConnectionPeerAdmission,
+  sseData,
+} from "../../../../shared/host-utils.js";
 import { installSettingsNamespace } from "../../../../shared/settings-namespace.js";
 import { dshHome, userHome } from "../../../../shared/dsh-home.js";
 import type { AdapterRegistry } from "../server/registry/interface.ts";
@@ -586,9 +590,14 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       }
     }
   };
+  const remoteAdmission = liveConnectionAdmission(ctx);
+  const remotePeerAdmission = liveConnectionPeerAdmission(ctx);
 
   const routes = [
-    ...createStatsRoutes({ stats: ROUTES.stats, history: ROUTES.history }, { statsService }),
+    ...createStatsRoutes(
+      { stats: ROUTES.stats, history: ROUTES.history },
+      { statsService, remoteAdmission },
+    ),
     ...createAdapterRoutes(
       {
         adapters: ROUTES.adapters,
@@ -599,6 +608,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       {
         ctx,
         statsService,
+        remoteAdmission,
         ensureHotReload,
         // B2 注册注入：路径准入与加载校验由组合根供给（已绑定 registry 实例，路由不直引值边）
         resolveAdapterFile: (input) => resolveAddAdapterFile(input),
@@ -612,7 +622,16 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         uiConfig: ROUTES.uiConfig,
         events: ROUTES.events,
       },
-      { statsService, trend, uiConfig, sseClients, broadcastUiConfigChanged, layerErrors },
+      {
+        statsService,
+        trend,
+        uiConfig,
+        sseClients,
+        broadcastUiConfigChanged,
+        layerErrors,
+        remoteAdmission,
+        remotePeerAdmission,
+      },
     ),
     ...createReportRoutes(
       {
@@ -625,6 +644,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       },
       {
         ctx,
+        remoteAdmission,
         historyRoot,
         reportQueue,
         reportCfgService,

@@ -11,6 +11,7 @@
 import { describe, expect, it } from "vitest";
 import { eraseMcpSdkDeclarations, startSdkErasure } from "../../src/server/erasure/interface.ts";
 import type { ErasureAssemblePort } from "../../src/server/erasure/interface.ts";
+import type { PromptPresentation } from "@deepseek-ai/dsh-system-prompt";
 
 const NL = String.fromCharCode(10);
 
@@ -128,13 +129,24 @@ describe("erasure 域：tools:sdk 段的 mcp__ 声明级擦除", () => {
     const dispose = startSdkErasure({ assemble: assemble.port, logger });
     const other = { name: "plugin:x", text: "mcp__ prose stays" };
     const sdk = { name: "tools:sdk", text: SDK_FIXTURE };
-    const downstream = { sections: [sdk, other], marker: 1 };
-    const out = (await assemble.handlers[0](downstream, {}, async () => downstream)) as {
-      sections: Array<{ name: string; text: string }>;
+    const contexts = [{ name: "workspace", text: "cwd" }];
+    const variables = { workspace: "/repo" };
+    const downstream: PromptPresentation = {
+      sections: [sdk, other],
+      contexts,
+      variables,
     };
+    let nextCalls = 0;
+    const out = (await assemble.handlers[0](downstream, {}, async () => {
+      nextCalls += 1;
+      return downstream;
+    })) as PromptPresentation;
     expect(out, "有泄漏返回新装配").not.toBe(downstream);
     expect(leakedLines(out.sections[0].text)).toEqual([]);
     expect(out.sections[1], "他段同一引用").toBe(other);
+    expect(out.contexts, "下游 contexts 原样保留").toBe(contexts);
+    expect(out.variables, "下游 variables 原样保留").toBe(variables);
+    expect(nextCalls, "waterfall 下游恰好调用一次").toBe(1);
     expect(logger.warns.length).toBe(1);
     expect(logger.warns[0]).toContain("#922");
     dispose();

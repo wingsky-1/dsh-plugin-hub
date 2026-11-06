@@ -493,8 +493,13 @@ function registerCase12(): void {
       const originalLoad = poolLoader!.load;
       let rejectLoad: (error: Error) => void = () => {};
       let loadStarted = false;
+      // 持续故障夹具：首次 load 挂起等 reject，其后每次 load 都按同一错因立即拒绝。
+      // 装载失败的合法后续是同 tick 再次触达；换新挂起 promise 会让它永不 settle，
+      // entry 卡在 connecting，本用例等的「失败后 SSE 广播」永不到来。
+      let failure: Error | undefined;
       poolLoader!.load = () => {
         loadStarted = true;
+        if (failure !== undefined) return Promise.reject(failure);
         return new Promise((_, reject) => {
           rejectLoad = reject;
         });
@@ -519,7 +524,20 @@ function registerCase12(): void {
         await pollUntil("SDK load 已发起", () => loadStarted);
         await pollUntil("连接中 SSE 状态广播", () => observed.includes("connecting"));
         const beforeFailure = res.state.body;
-        rejectLoad(new Error(`SDK failed ${secret}`));
+        // 显式驱动已存在的宏任务竞态：用一个 0-timer 排一次重试触达，使其明确排在
+        // 失败通知的 setTimeout(0) 合并之前到达；reject 的微任务先置 failed。
+        let retryDone: () => void = () => {};
+        const retryGate = new Promise<void>((resolve) => {
+          retryDone = resolve;
+        });
+        const retryTimer = setTimeout(() => {
+          manager.reconcileServers();
+          retryDone();
+        }, 0);
+        failure = new Error(`SDK failed ${secret}`);
+        rejectLoad(failure);
+        await retryGate;
+        clearTimeout(retryTimer);
         await pollUntil("失败状态 SSE 广播", () => observed.includes("failed"));
         expect(res.state.body.slice(beforeFailure.length)).toContain('"type":"summary"');
         const summary = JSON.stringify(manager.summary());

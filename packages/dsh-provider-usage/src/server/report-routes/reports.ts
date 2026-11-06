@@ -23,6 +23,7 @@ import {
   guardLoopbackMethod,
   readJsonBodyOutcome,
   writeJson,
+  type RemoteAdmissionSource,
 } from "../../../../../shared/host-utils.js";
 import type { ReportConfig, ReportPeriod } from "../config/interface.ts";
 import type { ReportCycleMeta } from "../execute/interface.ts";
@@ -58,6 +59,7 @@ import { sanitizeHtml } from "../../shared/interface.ts";
 
 export interface ReportRoutesContext {
   ctx: Context;
+  remoteAdmission?: RemoteAdmissionSource;
   historyRoot: string;
   /** 任务队列窄口（submit 入队去重；get 状态轮询；执行器由队列内嵌）。 */
   reportQueue: ReportRouteQueue;
@@ -245,7 +247,12 @@ export async function handleReportConfig(
   res: ServerResponse,
   context: ReportRoutesContext,
 ): Promise<void> {
-  if (!guardLoopbackMethod(req, res, ["GET", "POST"])) return;
+  if (
+    !guardLoopbackMethod(req, res, ["GET", "POST"], {
+      remoteAdmission: context.remoteAdmission,
+    })
+  )
+    return;
   if (req.method === "GET") return sendReportConfigGet(res, context);
 
   // 读不出来的 body 不能当「没给配置」：normalizeReportConfig(undefined) 会回落**整套默认值**，
@@ -329,7 +336,7 @@ export async function handleReportModels(
   res: ServerResponse,
   context: ReportRoutesContext,
 ): Promise<void> {
-  if (!guardLoopbackMethod(req, res, ["GET"])) return;
+  if (!guardLoopbackMethod(req, res, ["GET"], { remoteAdmission: context.remoteAdmission })) return;
   const { ctx } = context;
   const url = new URL(req.url ?? "/", "http://localhost");
   const provider = url.searchParams.get("provider") ?? "";
@@ -406,7 +413,7 @@ export async function handleReports(
   res: ServerResponse,
   context: ReportRoutesContext,
 ): Promise<void> {
-  if (!guardLoopbackMethod(req, res, ["GET"])) return;
+  if (!guardLoopbackMethod(req, res, ["GET"], { remoteAdmission: context.remoteAdmission })) return;
   const list = await context.readReportIndex(context.historyRoot);
   writeJson(res, 200, { ok: true, reports: list });
 }
@@ -416,7 +423,7 @@ export async function handleReportDetail(
   res: ServerResponse,
   context: ReportRoutesContext,
 ): Promise<void> {
-  if (!guardLoopbackMethod(req, res, ["GET"])) return;
+  if (!guardLoopbackMethod(req, res, ["GET"], { remoteAdmission: context.remoteAdmission })) return;
   const { historyRoot } = context;
   const url = new URL(req.url ?? "/", "http://localhost");
   const period = url.searchParams.get("period") ?? "";
@@ -548,7 +555,8 @@ export async function handleReportGenerate(
   res: ServerResponse,
   context: ReportRoutesContext,
 ): Promise<void> {
-  if (!guardLoopbackMethod(req, res, ["POST"])) return;
+  if (!guardLoopbackMethod(req, res, ["POST"], { remoteAdmission: context.remoteAdmission }))
+    return;
   const { reportQueue, reportCfgService } = context;
 
   const outcome = await readJsonBodyOutcome(req);
@@ -602,7 +610,7 @@ export async function handleReportStatus(
   res: ServerResponse,
   context: ReportRoutesContext,
 ): Promise<void> {
-  if (!guardLoopbackMethod(req, res, ["GET"])) return;
+  if (!guardLoopbackMethod(req, res, ["GET"], { remoteAdmission: context.remoteAdmission })) return;
   const { reportQueue } = context;
   const url = new URL(req.url ?? "/", "http://localhost");
   const taskId = url.searchParams.get("taskId") ?? "";

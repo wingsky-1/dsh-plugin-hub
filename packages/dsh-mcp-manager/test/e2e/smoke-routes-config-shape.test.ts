@@ -53,13 +53,10 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
     ]);
   });
 
-  it("config 非 loopback GET → 200（只读 UI 配置放开）", async () => {
+  it("config 非 loopback GET 缺官方 admission → 403（只读面不再匿名放行）", async () => {
     const res = fakeRes();
     await find(ROUTES.config).handler(fakeFenceBroken("GET", ROUTES.config), res);
-    expect(res.state.status).toBe(200);
-    const body = JSON.parse(res.state.body);
-    expect(body.position).toBe("top-right");
-    expect(body.offsetX).toBe(8);
+    expect(res.state.status).toBe(403);
   });
 
   it("config POST 写 → 200 且读回更新（配置读写）", async () => {

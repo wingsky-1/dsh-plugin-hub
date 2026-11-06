@@ -100,7 +100,7 @@ git log --oneline <old-tag>..<new-tag> | grep -iE "breaking|migrat"  # 破坏性
 ```bash
 cd <dsh-plugin-hub clone>
 # 每个插件的 client.inject 注入项
-for p in dsh-lan-proxy dsh-mcp-manager dsh-notifier dsh-provider-usage dsh-verify-isolated; do
+for p in dsh-mcp-manager dsh-notifier dsh-provider-usage dsh-verify-isolated; do
   echo "--- $p ---"
   node -e "const p=require('./packages/$p/package.json');console.log(JSON.stringify(p.dsh&&p.dsh.client&&p.dsh.client.inject||[]))"
 done
@@ -173,7 +173,10 @@ dsh plugin --profile web install
 - [ ] `dsh --version` 显示目标 rc
 - [ ] `dsh plugin --profile web list` 各插件版本/pin 符合预期
 - [ ] 浏览器 Console 无 `client-runtime` / `client-connection` 加载错误
-- [ ] 各 link 插件均加载（MCP 浮窗、notifier、lan-proxy、provider-usage）
+- [ ] 各 link 插件均加载（MCP 浮窗、notifier、provider-usage、verify-isolated）
+- [ ] 原生 LAN 直连按逐插件隔离矩阵记录：Host/Origin/token/API/WS、官方
+      `requestRejection` 的 401/403/undefined、非回环长流 `admit` 的 PeerScope 生命周期
+      与 405 反例分别给结果；未验证项写 `NOT-RUN`，不得据 TLS 成功推断插件 API 可用
 - [ ] 版本化插件仍正常：skill-explorer（@linxin666/dsh-client-ui-skill-explorer）、archify-dsh、dsh-web-mobile（mobile-nav）
 - [ ] **窄屏实测（最关键）**：iPad / iOS 访问，验证 mobile-nav 抽屉/侧栏适配
 - [ ] 明暗双主题下插件 UI 正常（不硬编码配色）

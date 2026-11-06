@@ -1,7 +1,7 @@
 # dsh-plugin-hub 插件架构文档
 
 > 本目录用**图解为主**的方式，讲清每个插件的**功能、原理、使用方式**。
-> lan-proxy、notifier 与 mcp-manager 按 BA 业务 / AA 应用 / DA 数据 / TA 技术四视图组织（mcp-manager 与 lan-proxy、notifier 的 TOGAF 四视图同模板，基线 d5cfdf08）；
+> notifier 与 mcp-manager 按 BA 业务 / AA 应用 / DA 数据 / TA 技术四视图组织；
 > 其余文档按功能概览 → 总体架构图 → 核心机制 / 时序 → 使用方式 → 安全模型与边界组织，
 > 与各插件包 README（安装 / 配置 / 验证的快速上手）互补。
 >
@@ -18,12 +18,11 @@
 
 | 插件 | 一句话定位 | 架构文档 |
 |---|---|---|
-| `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web：HTTP/HTTPS/WS 转发 + TLS + 响应压缩 | [dsh-lan-proxy.md](dsh-lan-proxy.md) |
 | `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理：配置面与模型可见面管理（单池 + `ws_mcp_call` 统一寻址） | [dsh-mcp-manager.md](dsh-mcp-manager.md) |
 | `@wingsky-1/dsh-notifier` | 审批/完成/错误事件通知：浏览器 Notification + 系统 toast + Bark | [dsh-notifier.md](dsh-notifier.md) |
 | `@wingsky-1/dsh-provider-usage` | 多 provider 用量统计：v2 适配器契约 + 宿主端渲染 + 历史落盘 | [dsh-provider-usage.md](dsh-provider-usage.md) |
 | `@wingsky-1/dsh-verify-isolated` | 插件开发隔离浏览器验证 skill（临时 DSH_HOME + 独立 profile） | [dsh-verify-isolated.md](dsh-verify-isolated.md) |
-| `@wingsky-1/dsh-plugins-all` | 全家桶聚合包（一键装齐 + 聚合 cordis patch） | [dsh-plugins-all.md](dsh-plugins-all.md) |
+| `@wingsky-1/dsh-plugins-all` | 聚合包（包含上述 4 个功能包 + 聚合 cordis patch） | [dsh-plugins-all.md](dsh-plugins-all.md) |
 
 ## 全景：插件如何挂载进 dsh web
 
@@ -32,11 +31,10 @@
 ```mermaid
 flowchart LR
     subgraph npm["npm 分发（@wingsky-1/dsh-*）"]
-        P1["dsh-lan-proxy"]
-        P2["dsh-mcp-manager"]
-        P3["dsh-notifier"]
-        P4["dsh-provider-usage"]
-        P5["dsh-verify-isolated"]
+        P1["dsh-mcp-manager"]
+        P2["dsh-notifier"]
+        P3["dsh-provider-usage"]
+        P4["dsh-verify-isolated"]
     end
 
     subgraph profile["dsh web profile（cordis 运行时）"]
@@ -53,7 +51,6 @@ flowchart LR
     P2 --> CORDIS
     P3 --> CORDIS
     P4 --> CORDIS
-    P5 --> CORDIS
 ```
 
 要点：
@@ -76,8 +73,8 @@ flowchart LR
 
 | 机制 | 说明 | 实现位置 |
 |---|---|---|
-| **loopback 围栏** | 所有 `/api` 路由强制回环来源（remoteAddress + Host + 非跨站 + Origin 同源），非法 403 / 方法错 405——DNS 重绑定与跨站防御 | `shared/host-utils.js`（`isLoopbackRequest`） |
-| **官方 settings 存储** | 使用此机制的插件（如 lan-proxy）将配置存官方 `settings.register` 命名空间，cordis config 作 base 层，热更新由 `settings/document-updated` 驱动；notifier 当前自持 `config.json`，官方 settings 仅作迁移来源，见其 DA 视图 | `shared/settings-namespace.js`（`installSettingsNamespace`） |
+| **loopback 快路径 + 官方身份/Peer 生命周期** | loopback 直接走快路径；非回环短请求仅当官方 `requestRejection` 返回 `undefined` 时准入。非回环 SSE 还须经 `connection.admit` 保留 `PeerScope`，Peer 释放时立即停止广播并关闭。异常、401/403 或生命周期绑定失败均 fail-closed；逐插件隔离验证未完成 | `shared/host-utils.ts`；官方 `requestRejection` / `admit` seam |
+| **官方 settings 存储** | 使用此机制的插件将配置存官方 `settings.register` 命名空间，cordis config 作 base 层，热更新由 `settings/document-updated` 驱动；notifier 当前自持 `config.json`，官方 settings 仅作迁移来源，见其 DA 视图 | `shared/settings-namespace.ts`（`installSettingsNamespace`） |
 | **客户端干净模块** | 只 `export function apply(ctx)` + `export const inject`；样式独立 `src/client/style.css`；构建期内联（`scripts/build/build-client.ts`） | 各包 `src/client/index.ts` |
 | **发布物自包含** | 第三方依赖构建期内联进 `lib/`，运行时零 npm 依赖；license 自动归集 `lib/THIRD-PARTY-LICENSES` | `scripts/build/` |
 | **loopback 服务端/客户端契约** | 宿主端在 index.ts 透出纯函数/常量，smoke 从 `lib/index.js` 导入断言（路由围栏 + 客户端契约） | `test/*.test.ts` |
@@ -89,11 +86,6 @@ flowchart LR
 | 文档 | 图 | 源文件 |
 |---|---|---|
 | 本页（全景） | 挂载流程图 | mermaid 内嵌（无独立源） |
-| [dsh-lan-proxy.md](dsh-lan-proxy.md) | BA 业务架构 | [图源 HTML](diagrams/lan-proxy-ba.html) |
-| [dsh-lan-proxy.md](dsh-lan-proxy.md) | AA 应用架构 | [图源 HTML](diagrams/lan-proxy-aa.html) |
-| [dsh-lan-proxy.md](dsh-lan-proxy.md) | DA 数据架构 | [图源 HTML](diagrams/lan-proxy-da.html) |
-| [dsh-lan-proxy.md](dsh-lan-proxy.md) | TA 技术架构 | [图源 HTML](diagrams/lan-proxy-ta.html) |
-| [dsh-lan-proxy.md](dsh-lan-proxy.md) | 转发架构图（历史图源） | `diagrams/lan-proxy-architecture.html` |
 | [dsh-mcp-manager.md](dsh-mcp-manager.md) | BA / AA / DA / TA 四视图 | `diagrams/mcp-manager-{ba,aa,da,ta}.html` |
 | [dsh-mcp-manager.md](dsh-mcp-manager.md) | 双轨架构图（历史单图，非事实源） | `diagrams/mcp-manager-architecture.html` |
 | [dsh-notifier.md](dsh-notifier.md) | BA 业务架构 | [图源 HTML](diagrams/notifier-ba.html) |
@@ -102,6 +94,14 @@ flowchart LR
 | [dsh-notifier.md](dsh-notifier.md) | TA 技术架构 | [图源 HTML](diagrams/notifier-ta.html) |
 | [dsh-notifier.md](dsh-notifier.md) | 按域架构与通知管线图（历史图源） | `diagrams/notifier-architecture.html` |
 | [dsh-provider-usage.md](dsh-provider-usage.md) | 宿主端渲染架构图 | `diagrams/provider-usage-architecture.html` |
+
+## 退役历史
+
+| 文档 | 用途 |
+|---|---|
+| [dsh-lan-proxy.md](dsh-lan-proxy.md) | 旧 LAN 代理的四视图架构历史，不是当前能力承诺 |
+| [dsh-lan-proxy-official-access-assessment.md](dsh-lan-proxy-official-access-assessment.md) | 旧 DSH 基线上的重叠评估与退役决策证据 |
+| [lan-proxy 退役迁移](../migrations/dsh-lan-proxy.md) | 当前迁移、安全差异与用户动作 |
 
 > 调整方法：用浏览器打开源 HTML → 修改 SVG 内容 → 重新导出 SVG
 > （`python3 scripts/lib/export-diagram-svg.py <源.html>`）替换文档中的引用。

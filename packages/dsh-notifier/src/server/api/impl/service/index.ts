@@ -6,7 +6,7 @@ import type { ApiDeps } from "../../deps.ts";
 import { JournalEndpoints } from "../journal/index.ts";
 import { KindsEndpoints } from "../kinds/index.ts";
 import { ProbeEndpoints } from "../probe/index.ts";
-import { registerEndpoints } from "../route/index.ts";
+import { registerEndpoints, sendRouteRefusal } from "../route/index.ts";
 import type { Endpoint } from "../route/type.ts";
 import { SettingsEndpoints } from "../settings/index.ts";
 import { streamHub } from "../stream/index.ts";
@@ -52,7 +52,12 @@ class ApiService {
       // 包一层而不是裸传 streamHub.handle：那个方法要用 this，裸传会在回调时丢掉。
       {
         path: "/api/dsh-notifier/events",
-        methods: { GET: (req, res) => streamHub.handle(req, res) },
+        methods: {
+          GET: (req, res) => {
+            const rejection = streamHub.handle(req, res, deps.remote);
+            if (rejection !== undefined) sendRouteRefusal(res, rejection);
+          },
+        },
       },
     ];
 
@@ -72,7 +77,7 @@ class ApiService {
       // 才能保证回滚时它必定已装配——release() 对未装配的流枢纽是幂等空转，反过来不成立。
       streamHub.install({ logger: deps.logger });
       // registerEndpoints 自己抛错时它内部已整单回滚，routes 留空即可——两条回滚各管一段。
-      routes.push(...registerEndpoints(deps.register, endpoints, deps.logger));
+      routes.push(...registerEndpoints(deps.register, endpoints, deps.logger, deps.remote));
       frames.push(deps.frames.onFrame((payload) => streamHub.publish(payload)));
     } catch (error) {
       // 整单回滚：已挂的逐个摘除、不留「已装配」的假记忆。流枢纽与 installed 一起复位，否则

@@ -14,15 +14,19 @@
  * 用 pollUntil。
  */
 import { afterEach, describe, expect, it } from "vitest";
+import { Context } from "@deepseek-ai/cordis";
+import type { Fiber } from "@deepseek-ai/cordis";
 import { expandServerEnv } from "../../src/server/config/impl/env/index.ts";
 import type { ServerConfig } from "../../src/server/config/impl/model/type.ts";
 import { withTimeout } from "../../src/server/pipeline/impl/timeout/index.ts";
 import {
+  bindHost,
   DEFAULT_TOOL_CALL_TIMEOUT_MS,
   OFFICIAL_MCP_CLIENT_LOG_NAME,
   OFFICIAL_MCP_CLIENT_SPECIFIER,
 } from "../../src/server/shared/interface.ts";
 import type {
+  AttachmentsPort,
   LoaderPort,
   LogRecord,
   LogsPort,
@@ -435,5 +439,160 @@ describe("装载失败面", () => {
       mountServer({ root: "/proj/a", server: STDIO_SERVER, onState: () => {} }),
     ).rejects.toThrow(/未登记的包名/);
     expect(mountLedger.size).toBe(0);
+  });
+});
+
+interface SaveObservation {
+  readonly count: number;
+  readonly bytes: readonly number[];
+}
+
+function attachmentStore(observations: SaveObservation[]): AttachmentsPort {
+  return {
+    async saveImages(inputs) {
+      observations.push({
+        count: inputs.length,
+        bytes: inputs.map((input) => input.data.byteLength),
+      });
+      return inputs.map((_, index) => ({ id: `att-${observations.length}-${index}` }));
+    },
+  };
+}
+
+async function provideAttachments(ctx: Context, store: AttachmentsPort): Promise<Fiber> {
+  return ctx
+    .plugin({
+      name: "itest:attachments",
+      apply(inner: Context) {
+        inner.provide("attachments", store);
+      },
+    })
+    .await();
+}
+
+async function mountCapturingFacade(document: {
+  onApply?: (ctx: Context) => void;
+  beforeReady?: Promise<void>;
+}) {
+  const root = new Context();
+  const faces = bindHost(root);
+  let childContext: Context | undefined;
+  const handle = faces.loader.mount(
+    {
+      name: "itest:mcp-client",
+      async apply(ctx: unknown) {
+        childContext = ctx as Context;
+        document.onApply?.(childContext);
+        await document.beforeReady;
+      },
+    },
+    { serverName: "itest" },
+  );
+  return {
+    root,
+    handle,
+    facade: () => {
+      const facade = childContext?.get("attachments") as AttachmentsPort | undefined;
+      if (facade === undefined) throw new Error("facade 尚未装载");
+      return facade;
+    },
+    childContext: () => {
+      if (childContext === undefined) throw new Error("child 尚未装载");
+      return childContext;
+    },
+  };
+}
+
+describe("loader.mount 的 MCP attachments scope guard", () => {
+  it("ready 等待官方 child fiber；facade 为自身拥有 saveImages 的具体对象", async () => {
+    let startChild = () => {};
+    let finishChild = () => {};
+    const childStarted = new Promise<void>((resolve) => {
+      startChild = resolve;
+    });
+    const childGate = new Promise<void>((resolve) => {
+      finishChild = resolve;
+    });
+    const mounted = await mountCapturingFacade({
+      onApply: () => startChild(),
+      beforeReady: childGate,
+    });
+    await childStarted;
+    let ready = false;
+    void mounted.handle.ready.then(() => {
+      ready = true;
+    });
+    await Promise.resolve();
+    expect(ready).toBe(false);
+
+    finishChild();
+    await mounted.handle.ready;
+    expect(ready).toBe(true);
+    expect(Object.hasOwn(mounted.facade(), "saveImages")).toBe(true);
+    await mounted.handle.dispose();
+  });
+
+  it("10 张与恰好 8 MiB 放行，11 张与 8 MiB+1 在真实 store 调用前拒绝", async () => {
+    const observations: SaveObservation[] = [];
+    const mounted = await mountCapturingFacade({});
+    const store = attachmentStore(observations);
+    await provideAttachments(mounted.root, store);
+    await mounted.handle.ready;
+    const facade = mounted.facade();
+
+    const tiny = new Uint8Array([1]);
+    await facade.saveImages(
+      Array.from({ length: 10 }, () => ({
+        data: tiny,
+        mediaType: "image/png",
+      })),
+    );
+    await facade.saveImages([{ data: new Uint8Array(8 * 1024 * 1024), mediaType: "image/png" }]);
+    expect(observations).toEqual([
+      { count: 10, bytes: Array.from({ length: 10 }, () => 1) },
+      { count: 1, bytes: [8 * 1024 * 1024] },
+    ]);
+
+    await expect(
+      facade.saveImages(
+        Array.from({ length: 11 }, () => ({
+          data: tiny,
+          mediaType: "image/png",
+        })),
+      ),
+    ).rejects.toThrow(/too many images/u);
+    await expect(
+      facade.saveImages([{ data: new Uint8Array(8 * 1024 * 1024 + 1), mediaType: "image/png" }]),
+    ).rejects.toThrow(/exceeds 8 MiB/u);
+    expect(observations).toHaveLength(2);
+    await mounted.handle.dispose();
+  });
+
+  it("root store 逐次现取：缺席/卸载 fail closed，晚到替换生效，dispose 只撤本 wrapper scope", async () => {
+    const mounted = await mountCapturingFacade({});
+    const first: SaveObservation[] = [];
+    const second: SaveObservation[] = [];
+    await mounted.handle.ready;
+    await expect(
+      mounted.facade().saveImages([{ data: new Uint8Array([1]), mediaType: "image/png" }]),
+    ).rejects.toThrow(/no attachment store is mounted/u);
+
+    const firstProvider = await provideAttachments(mounted.root, attachmentStore(first));
+    await mounted.facade().saveImages([{ data: new Uint8Array([1]), mediaType: "image/png" }]);
+    await firstProvider.dispose();
+    await expect(
+      mounted.facade().saveImages([{ data: new Uint8Array([1]), mediaType: "image/png" }]),
+    ).rejects.toThrow(/no attachment store is mounted/u);
+
+    const replacement = attachmentStore(second);
+    const secondProvider = await provideAttachments(mounted.root, replacement);
+    await mounted.facade().saveImages([{ data: new Uint8Array([1]), mediaType: "image/png" }]);
+    const child = mounted.childContext();
+    await mounted.handle.dispose();
+    expect(first).toHaveLength(1);
+    expect(second).toHaveLength(1);
+    expect(mounted.root.get("attachments", true)).toBe(replacement);
+    expect(child.get("attachments", true)).toBeUndefined();
+    await secondProvider.dispose();
   });
 });

@@ -195,7 +195,9 @@ patch id 规范 + 改独立包 patch 后重生成聚合 patch｜Conventional Com
      fake ctx 用 webServer.register 收集路由、effect 立即执行、注入 fetchImpl、
      mkdtemp 临时目录模拟旧数据文件。注意：fake req 要带
      `socket.remoteAddress`/`headers.host`/`sec-fetch-site`
-     （否则被 loopback 围栏 403，得出假阴性）；async handler 要 await；
+     （同时覆盖 loopback 快路径与官方 `requestRejection` 的 401/403/undefined，避免把
+     “所有非回环 403”写成过时预期）；非回环 SSE 还要断言 `connection.admit` 的
+     PeerScope 生命周期；async handler 要 await；
      ESM 动态 import 用绝对路径。
 4. **复现证据落盘**：P0/P1 的复现脚本与输出摘要落盘到评审交付目录
    （如 workspace 下 `pr<N>-review/`），脚本头部自描述——会话结束与

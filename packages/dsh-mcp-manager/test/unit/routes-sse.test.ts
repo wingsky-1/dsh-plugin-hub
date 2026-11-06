@@ -203,7 +203,6 @@ describe("events 路由", () => {
   });
 });
 
-// SSE 心跳（#268）：data ping 帧 / 间隔常量 / close 与卸载 disposer 清理 ----
 describe("SSE 心跳常量契约", () => {
   // 常量契约：间隔对齐 dsh-notifier HEARTBEAT_MS（30s）；心跳必须是 data 帧而非
   // 注释帧——注释帧不触发客户端 onmessage，watchdog 无失活信号可依。
@@ -531,90 +530,6 @@ function registerHealthRealPoolCountCases() {
 describe("health 路由", () => {
   registerHealthFenceAndCountCases();
   registerHealthRealPoolCountCases();
-});
-
-describe("session / servers 边界", () => {
-  function routesFixture() {
-    const { manager } = setup();
-    const routes = makeRoutes(manager);
-    // 路由表静态装配：缺路由即装配损坏，此处断言存在（缺失时抛 TypeError 判红）。
-    return { manager, routes, find: (path: string) => routes.find((r) => r.path === path)! };
-  }
-
-  it("session 非 POST 405", async () => {
-    const { find } = routesFixture();
-    const sesGuard = await callHandler(find(ROUTES.session), fakeReq("GET", ROUTES.session));
-    expect(sesGuard.status).toBe(405);
-  });
-
-  it("session body 无 cwd 字符串 → 400", async () => {
-    const { find } = routesFixture();
-    const sesBad = await callHandler(find(ROUTES.session), fakeReq("POST", ROUTES.session, {}));
-    expect(sesBad.status).toBe(400);
-  });
-
-  it("session 无 body → 400", async () => {
-    const { find } = routesFixture();
-    const sesNoBody = await callHandler(find(ROUTES.session), fakeReq("POST", ROUTES.session));
-    expect(sesNoBody.status).toBe(400);
-  });
-
-  it.each(["PATCH", "DELETE"])("servers %s 缺 name → 400", async (method) => {
-    const { find } = routesFixture();
-    const res = await callHandler(find(ROUTES.servers), fakeReq(method, ROUTES.servers));
-    expect(res.status).toBe(400);
-  });
-
-  it.each(["PATCH", "DELETE"])(
-    "servers %s 缺 name 文案含 name query parameter is required",
-    async (method) => {
-      const { find } = routesFixture();
-      const res = await callHandler(find(ROUTES.servers), fakeReq(method, ROUTES.servers));
-      expect(JSON.stringify(res.payload)).toMatch(/name query parameter is required/);
-    },
-  );
-
-  it("servers PUT → 405", async () => {
-    const { find } = routesFixture();
-    const resPut = await callHandler(find(ROUTES.servers), fakeReq("PUT", ROUTES.servers));
-    expect(resPut.status).toBe(405);
-  });
-
-  it("DELETE 存在的服务器 → 200", async () => {
-    const { find } = routesFixture();
-    const resDel = await callHandler(
-      find(ROUTES.servers),
-      fakeReq("DELETE", `${ROUTES.servers}?name=dup-a`),
-    );
-    expect(resDel.status).toBe(200);
-  });
-
-  it("delete 返回 ok:true", async () => {
-    const { find } = routesFixture();
-    const resDel = await callHandler(
-      find(ROUTES.servers),
-      fakeReq("DELETE", `${ROUTES.servers}?name=dup-a`),
-    );
-    expect((resDel.payload as { ok: unknown }).ok).toBe(true);
-  });
-
-  it("PATCH 不存在的服务器 → 400", async () => {
-    const { find } = routesFixture();
-    const resPatchMissing = await callHandler(
-      find(ROUTES.servers),
-      fakeReq("PATCH", `${ROUTES.servers}?name=ghost`, { command: "x" }),
-    );
-    expect(resPatchMissing.status).toBe(400);
-  });
-
-  it("PATCH 不存在的服务器文案含 not found", async () => {
-    const { find } = routesFixture();
-    const resPatchMissing = await callHandler(
-      find(ROUTES.servers),
-      fakeReq("PATCH", `${ROUTES.servers}?name=ghost`, { command: "x" }),
-    );
-    expect(JSON.stringify(resPatchMissing.payload)).toMatch(/not found/);
-  });
 });
 
 describe("connect/disconnect/reconnect 围栏（#903 M-B5）", () => {

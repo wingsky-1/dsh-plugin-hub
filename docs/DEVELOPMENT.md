@@ -28,7 +28,8 @@ pnpm pack:check   # tarball 完整性（含聚合包）
 pnpm typecheck    # 全仓类型检查
 ```
 
-> Node 版本：本地直跑 TS 需 **≥23.6**（type stripping 门槛）；CI 固定 Node 24。
+> Node 版本：目标 DSH `0.2.2-rc.1` 的运行前提是 **>=24.9**；本仓本地直跑 TS 的
+> type stripping 工具门槛是 **>=23.6**；CI 固定 Node 24。
 > 阈值事实源分处两处，按维度划分：**覆盖率**在 `scripts/data/coverage.config.json`
 > 的 `thresholds`（#733 计划项 3.4 起；`vitest.config.ts` 只 import 它，不得再内联
 > `include`/`exclude`/`thresholds`——降线由 `scripts/gate/threshold-monotonic.mjs` 对比
@@ -112,7 +113,7 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
      `aggregate:check`、`stryker:check`、`test:scripts`、`forbid-src-tests`、
      `forbid-homedir-src`、`forbid-module-state-src`、`verify-scripts-index`、
      `verify-coverage-scope`、`verify:vendored-binaries`、`verify-dir-imports`（4 包硬判
-     + provider-usage `--soft`）、`export-surface-snapshot`（dsh-notifier + dsh-lan-proxy）、
+     + provider-usage `--soft`）、`export-surface-snapshot`（dsh-notifier）、
      `verify-shared-fanin`、`docs:check`、`lint`、`format:check`
      （本清单是导读，**事实源是 ci.yml 的 repo-gate 步骤本身**。接线由
      `scripts/test/gate-wiring.test.ts` 两族断言守护，缺一不可：**一致性**——「本地档位计划 ↔
@@ -298,7 +299,9 @@ contract-check 禁止运行时值导入）。原自建类型层 `types/dsh.d.ts`
 - **依赖纪律**：只 import `../../shared/*`（loopback / host-utils / paths / dsh-home，构建期
   内联）与 Node 内置模块；**任何第三方运行时依赖一律由 esbuild `--bundle` 内联**
   （如 mcp-manager 宿主用的 `fast-glob`），发布物不以运行时 npm 依赖形式发布。
-- **安全**：全部路由强制 loopback 围栏（非回环 403、方法错 405），`/health` 必项；
+- **安全**：路由保留 loopback 快路径；非回环短请求使用官方 `requestRejection`，
+  401/403/异常 fail-closed，身份通过后才判方法错 405。非回环 SSE 另用官方
+  `connection.admit` 保留 `PeerScope` 并绑定释放生命周期；`/health` 必项。
   RPC/端点做参数校验；密钥/凭据不入包。
 - **挂载**：`cordis.patch.yml`，patch **id 用 `dsh-<name>`**；声明 `dsh.client` 时必须有
   `exports["./client"]`（`contract-check` 联动断言，缺则整包拒载）。**独立包与聚合包
@@ -314,8 +317,8 @@ contract-check 禁止运行时值导入）。原自建类型层 `types/dsh.d.ts`
   每个测试文件独立环境（per-file 隔离），包级调用按 cwd 自动收窄到本包；
   乱序验证用 `--sequence.shuffle` 透传。
   测试文件直跑 TS 源码，但部分文件断言 `lib/` 产物
-  （如客户端产物契约），故跑前仍需 `pnpm build`；必含 403/405 围栏用例 +
-  客户端契约断言（`assertClientSourceContract` / `assertClientProductContract`）。
+  （如客户端产物契约），故跑前仍需 `pnpm build`；必含 loopback 快路径、官方认证
+  401/403/undefined、405 与长流 Peer 生命周期用例 + 客户端契约断言（`assertClientSourceContract` / `assertClientProductContract`）。
   `--min` 是**测试文件数**下限（vitest json reporter 的 `testResults` 计数），用于封堵
   include 配置漂移导致部分文件漏收集的假绿向量；各包 `--min` 与实际文件数由
   `node scripts/gate/gen-stryker-conf.mjs --check` 强制同步（判据 ③）。
@@ -326,7 +329,7 @@ contract-check 禁止运行时值导入）。原自建类型层 `types/dsh.d.ts`
 
 | 层                    | 判据                                                                                                                                                | 进变异面 |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| `test/unit/**`        | 单模块 / 纯逻辑 / fake 驱动、只做临时目录 I/O（允许为覆盖分支而短暂 bind 一个端口，如 lan-proxy 的 EADDRINUSE 用例）                                | 是       |
+| `test/unit/**`        | 单模块 / 纯逻辑 / fake 驱动、只做临时目录 I/O（允许为覆盖分支而短暂 bind 一个临时端口）                                | 是       |
 | `test/integration/**` | 以真实 socket/真实组合根为被测对象：起真实 http server（内核临时端口）走完整转发链、真实 cordis Context、真实配置迁移                               | 是       |
 | `test/client-unit/**` | 直连 `src/client/**` 的**纯逻辑**判据（判定、映射表、状态机），不需要 DOM；环境 `node`                                                                  | 是       |
 | `test/client-dom/**`  | 直连 `src/client/**` 但被测模块在**加载期或运行期真的读写 DOM**（`document.title`、横幅挂载），必须 `happy-dom`；文件头用 `@vitest-environment happy-dom` 声明（派生配置是单 project `node`，不吃根配置的层环境） | 是       |
@@ -605,13 +608,13 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
 
 本仓共享分三档，按“消费者集合”判定归属，禁止按“感觉像公共代码”放。判定顺序自下而上：先问能不能留在端内，再问够不够跨端，最后才问配不配跨包。
 
-档 A——端内共享（packages/<pkg>/src/server/shared/ 与 src/client/shared/）：归属判据为消费者同属一端（同为宿主端或同为客户端）且同属一包。如 lan-proxy 的 src/client/shared/contract.ts、defaults.ts、interface.ts、view.ts 与 src/server/shared/defaults.ts、deflate.ts、interface.ts、net.ts、paths.ts（两端各一面，两面互不引用）。lan-proxy 的 client/shared 是端内档，不是跨端档——双端同时需要的常量不得放进任一端内面。约束：端内面允许值 import 同包宿主模块；但 client/shared 内禁止值引 node:*（构建硬失败）与 bare 第三方包（静默内联进浏览器产物，最危险）；类型一律 import type。门禁：verify-dir-imports（interface.ts 门面唯一入口，调用点 --package 含本包，登记见 gate-scope-registry.json）；跨模块直引 impl 即红。
+档 A——端内共享（packages/<pkg>/src/server/shared/ 与 src/client/shared/）：归属判据为消费者同属一端（同为宿主端或同为客户端）且同属一包。端内共享只服务单包；双端同时需要的常量不得放进任一端内面。约束：端内面允许值 import 同包宿主模块；但 client/shared 内禁止值引 node:*（构建硬失败）与 bare 第三方包（静默内联进浏览器产物，最危险）；类型一律 import type。门禁：verify-dir-imports（interface.ts 门面唯一入口，调用点 --package 含本包，登记见 gate-scope-registry.json）；跨模块直引 impl 即红。
 
 档 B——跨端共享（packages/<pkg>/src/shared/）：归属判据三者全满足才进：①两端真实消费同一模块；②模块零 import 或只做同目录 .ts 相对 import；③不含任一端专属依赖（node:fs/schemastery/React 运行时值引用有一即出局）。样板：notifier src/shared/11 文件（capabilities/channels/disposers/interface/kinds/quiet/reason-codes/refusal/sounds/tones/webhooks），两端经 src/shared/interface.ts 一处门面引用。反例：provider-usage src/shared/config.ts、ui-config.ts 含 schemastery/node:fs，故其客户端刻意不走门面（见其 interface.ts 注），该包不得整体套用本档门面口径——宿主专属模块留档 A 宿主侧，客户端直引实现文件并接受 verify-dir-imports 对 src/client/ 的豁免。约束：本目录每个文件不得出现值形态 import/export-from（import type 亦归一成值形态判红，见 shared-leaf-imports.test.ts normalizeTypeImports 口径）；跨目录相对引用即红；export * 整转出禁用（逐个命名导出实际被消费符号）。门禁：shared-leaf-imports.test.ts（扫描面为空即 fail-closed 红）+ 客户端构建 browser 平台校验为第二道硬门。
 
 档 C——跨包共享（仓库根 shared/）：归属判据沿用 shared/README.md 准入 1-7（≥2 稳定消费者、无包级常量依赖、跨 apply 状态语义明确、无泄漏、登记行为契约、独立测试、退役一次做完），由 verify-shared-fanin.mjs 按生产 src 口径机械判定。消费方不在文档登记，由判据实时派生，人肉快照禁止回潮。约束：消费方相对路径 import（构建期 esbuild 内联，发布物不得残留包外运行时引用，pack:check 双向断言）；官方类型层在 packages/*/src 下仅 import type。登记机制化：新增跨包模块同 PR 内“代码+声明+测试+扇入≥下限”四齐；退役同 PR 内一次做完；豁免唯一通道 gate-exemptions.json，禁止 --accept 私有通道。
 
-三档互斥与迁移：同名语义只许存在于一档；notifier 式跨端常量不得再在端内复制第二份；lan-proxy 若新增双端共享常量，进档 B 新建 src/shared/（复用门面 + leaf 判据），不得塞进任一端内面；跨包候选由档 B/A 沉淀后经评审升档 C，不空降。
+三档互斥与迁移：同名语义只许存在于一档；notifier 式跨端常量不得再在端内复制第二份；新增双端共享常量进档 B 的 src/shared/（复用门面 + leaf 判据），不得塞进任一端内面；跨包候选由档 B/A 沉淀后经评审升档 C，不空降。
 
 ### 2.3 客户端其它要点
 
@@ -681,12 +684,10 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
       `∪excludes`（它是变异面自身的定义面），因而同样能让文件退出 `uncoveredSrcFiles`：
       · `testLayers.coverageExcludes`：把文件写进该包的覆盖排除面 ⇒ 该文件退出
         `uncoveredSrcFiles` 质量证据，门禁输出称之为「质量证据改善（--write-baseline
-        会清理入库）」。**当前实际在用的是这条**（四包 coverageExcludes 合计 **15** 条：
-        dsh-mcp-manager 3 / dsh-notifier 5 / dsh-provider-usage 6 / dsh-lan-proxy 1；
-        条数以 `scripts/data/mutation-topology.json` 各包
-        `testLayers.coverageExcludes` 为唯一事实源）。台账里 `gate=verify-dir-imports` 现有 11 条**全部是证据级条目**（#767
-        lan-proxy unit-apply 1 条 + #847 sidebar 客户端单测 10 条；同批 unit-proxy / wfp /
-        notifier-§5.3 存量已随主干演进消除而不登记），本通道（覆盖率排除面）自身零条目。条目形状与 vitest 面
+        会清理入库）」。**当前实际在用的是这条**；具体包与条数以
+        `scripts/data/mutation-topology.json` 各包 `testLayers.coverageExcludes`
+        为唯一事实源。台账里的历史证据随对应包退役退出当前登记；同批 unit-proxy / wfp /
+        notifier-§5.3 存量已随主干演进消除。本通道（覆盖率排除面）自身零条目。条目形状与 vitest 面
         `coverage.config.json` 的 exclude **同形同键名**：
         `{ pattern, reason, kind }`——`pattern` 带 `!` 前缀，`reason` 不少于 10 字
         （与 `verify-coverage-scope.mjs` 同一下限）。**裸 glob 即判红**：形状不合法由共享
@@ -734,9 +735,8 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
     结构搬迁落地，本轮不作硬判据——否则 notifier / provider-usage 的既有同包跨域取用会整片
     判红，那是搬迁面不是判据面。包范围不内嵌脚本常量，随 `--package` 的调用面走
     （登记在 `scripts/data/gate-scope-registry.json`）。存量两档：本包 13 条进单调基线
-    （随搬迁清零），其他包 11 条走 `gate-exemptions.json` 的证据级条目——lan-proxy
-    unit-apply 1 条（trackingIssue #767）、sidebar 客户端单测 10 条（trackingIssue #847
-    sidebar 遗留清单）；同批 unit-proxy / wfp 两条已随主干演进消除而不登记。
+    （随搬迁清零），其他包的证据级条目走 `gate-exemptions.json`；已退役包的条目是否
+    继续保留以该台账的 trackingIssue 与清理条件为准，不在本文复制快照。
   - **导出面门禁（`scripts/gate/export-surface-snapshot.mjs`；#669 PR1 / #733 M0+M2a / N0(B)）**：
     `tsc --declaration` 产物是包对外契约的编译期镜像，固化为入库基线
     `scripts/data/<pkg>-export-surface.json`，重构前后零 diff 即机器证据。粒度两条（**逐入口**）：
@@ -795,13 +795,13 @@ entries }`——兼容字段 `exports` = **主入口**的导出面、`declBlocks
   每个**带 `types` 条件**的导出子路径，其 `types` 必须指向包内真实文件。实证缺陷：
   `exports["./client"].types` 曾写 `./lib/client.d.ts`（实际产出 `lib/client/index.d.ts`），
   严格 TS 消费方按包名子路径导入时静默降级为 `any`（TS7016），而 `pack:check` /
-  `contract-check` 都看不见（后者只断言 `exports['./client']` 键存在）。**该缺陷实测存在于
-  全部 4 个有客户端的包**（dsh-notifier / dsh-lan-proxy / dsh-mcp-manager /
-  dsh-provider-usage），判据面对全部包生效、不留切片。判据实现
+  `contract-check` 都看不见（后者只断言 `exports['./client']` 键存在）。当时在全部有
+  客户端的包中实测到该缺陷；当前清单为 dsh-notifier / dsh-mcp-manager /
+  dsh-provider-usage，判据面对全部包生效、不留切片。判据实现
   `scripts/lib/exports-types-lib.ts`——与导出面快照门禁**共用**「`exports[].types` → 产物
   相对路径」映射，但**判的是不同产物**（此处判 tarball，门禁判 emit 产物），故不是双轨；
   消费方探针：隔离目录软链 `node_modules/@wingsky-1/<pkg>` → 包目录 + `--strict
---moduleResolution bundler`，四包实测统一为「对照组主入口 exit=0 / 子路径修复前 TS7016 /
+--moduleResolution bundler`，当时的四个客户端包实测统一为「对照组主入口 exit=0 / 子路径修复前 TS7016 /
   修复后 TS2322」。
 - `assertClientSourceContract`（smoke-lib）：兼容三种产物形态（纯净 wrapper /
   React externals / legacy），断言 `"use strict"`、契约外壳、Symbol.toStringTag、
@@ -966,7 +966,8 @@ entries }`——兼容字段 `exports` = **主入口**的导出面、`declBlocks
 ### 5.1 基本要求
 
 - **无网络与零真实凭据**：smoke 测试全部无网络、无真实凭据，本地可直接离线运行。
-- **断言全覆盖**：新功能/修复必须带 smoke 断言（含路由 403/405 围栏用例、client 契约断言）。
+- **断言全覆盖**：新功能/修复必须带 smoke 断言（含 loopback 快路径、官方认证
+  401/403/undefined、405、长流 Peer 生命周期和 client 契约）。
 - **CI 稳定性门槛**：新增 / 修改测试文件后，本地在该包目录内连续跑 **≥10 次**确认无 flake
   再提交，如 `cd packages/<pkg> && for i in $(seq 1 10); do node ../../scripts/test/run-vitest.mjs --min <N>; done`
   （`--min` 取值见该包 `package.json` 的 test script）。

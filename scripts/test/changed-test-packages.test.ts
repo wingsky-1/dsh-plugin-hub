@@ -69,8 +69,8 @@ test("#742 1.7 + P1-D1: packageOfTestPath 不认 e2e/client 层（永不进变�
 test("#742 1.7 + P1-D1: parseTestDiffPaths 去重升序，忽略空段与排除层", () => {
   const z = [
     "packages/dsh-notifier/test/a.test.ts",
-    "packages/dsh-lan-proxy/test/e2e/smoke.test.ts",
-    "packages/dsh-lan-proxy/test/bundle/a.test.ts",
+    "packages/dsh-provider-usage/test/e2e/smoke.test.ts",
+    "packages/dsh-provider-usage/test/bundle/a.test.ts",
     "packages/dsh-notifier/test/b.test.ts",
     "packages/dsh-notifier/src/index.ts",
     "shared/util.ts",
@@ -86,17 +86,17 @@ test("#742 1.7: packagesToInvalidate 覆盖 test/** 之外的测试面输入（�
   assert.deepEqual(packagesToInvalidate(["packages/dsh-notifier/test/a.test.ts"], reg), [
     "dsh-notifier",
   ]);
-  // 共享测试库：4 个包都在用（其中只有 notifier 在变异面内，其余 3 个是 e2e/client 层——
-  // 按整包失效是有意的过宽，漏跑的代价更大）
+  // 共享测试库：3 个包都在用（其中只有 notifier 在变异面内，其余 2 个是 e2e/client 层——
+  // 按整包失效是有意的过宽，漏跑的代价更大）。#1159 起 lan-proxy 退役删包，少一个消费者。
   assert.deepEqual(packagesToInvalidate(["test/smoke-lib.ts"], reg), [
-    "dsh-lan-proxy",
     "dsh-mcp-manager",
     "dsh-notifier",
     "dsh-provider-usage",
   ]);
-  assert.deepEqual(packagesToInvalidate(["vitest.stryker.d/dsh-lan-proxy.config.ts"], reg), [
-    "dsh-lan-proxy",
-  ]);
+  assert.deepEqual(
+    packagesToInvalidate(["vitest.stryker.d/dsh-mcp-manager-client.config.ts"], reg),
+    ["dsh-mcp-manager:client"],
+  );
   // P1-D2：单段配置变更只发射 包:段（下游仅该段失基线），不再连坐整包
   assert.deepEqual(
     packagesToInvalidate(["stryker.conf.d/dsh-provider-usage-report-execute.json"], reg),
@@ -173,38 +173,38 @@ test("P2c: 其余包段条目映射", () => {
     ["dsh-provider-usage:pipeline-core"],
   );
   assert.deepEqual(
-    packagesToInvalidate(["vitest.stryker.d/dsh-lan-proxy-tls.config.ts"], reg, topo),
-    ["dsh-lan-proxy:tls"],
+    packagesToInvalidate(["vitest.stryker.d/dsh-mcp-manager-client-panel.config.ts"], reg, topo),
+    ["dsh-mcp-manager:client-panel"],
   );
   const maskClient = "packages/dsh-notifier/test/client-unit/mask.test.ts";
   const got = packagesToInvalidate([maskClient], reg, topo);
   assert.ok(got.includes("dsh-notifier:client"), "client 测试须命中 client 段");
   assert.ok(!got.includes("dsh-notifier"), "不得连坐整包");
-  const proxyFile = "packages/dsh-lan-proxy/test/unit/proxy.test.ts";
-  const singleProxy = structuredClone(topo);
-  singleProxy.packages["dsh-lan-proxy"].segments = {
-    proxy: {
-      testFiles: [proxyFile],
+  const unitFile = "packages/dsh-mcp-manager/test/unit/hotspot.test.ts";
+  const singleSegment = structuredClone(topo);
+  singleSegment.packages["dsh-mcp-manager"].segments = {
+    manager: {
+      testFiles: [unitFile],
       mutate: [],
       excludes: [],
     },
   };
   assert.deepEqual(
-    packagesToInvalidate([proxyFile], reg, singleProxy),
-    ["dsh-lan-proxy"],
+    packagesToInvalidate([unitFile], reg, singleSegment),
+    ["dsh-mcp-manager"],
     "单段覆盖该文件全部变异面时，等价于整包失效",
   );
   const narrowed = structuredClone(topo);
-  narrowed.packages["dsh-lan-proxy"].segments = {
-    proxy: { testFiles: [proxyFile], mutate: [], excludes: [] },
-    tls: { testFiles: [], mutate: [], excludes: [] },
+  narrowed.packages["dsh-mcp-manager"].segments = {
+    manager: { testFiles: [unitFile], mutate: [], excludes: [] },
+    entry: { testFiles: [], mutate: [], excludes: [] },
   };
-  assert.deepEqual(packagesToInvalidate([proxyFile], reg, narrowed), ["dsh-lan-proxy:proxy"]);
+  assert.deepEqual(packagesToInvalidate([unitFile], reg, narrowed), ["dsh-mcp-manager:manager"]);
   const missingTopology = structuredClone(topo);
-  delete missingTopology.packages["dsh-lan-proxy"];
+  delete missingTopology.packages["dsh-mcp-manager"];
   assert.deepEqual(
-    packagesToInvalidate(["packages/dsh-lan-proxy/test/unit/proxy.test.ts"], reg, missingTopology),
-    ["dsh-lan-proxy"],
+    packagesToInvalidate([unitFile], reg, missingTopology),
+    ["dsh-mcp-manager"],
     "包未登记拓扑时保持整包失效",
   );
 });
@@ -495,9 +495,9 @@ test("D: 解析失败回整包 + 混合 diff 工人不扩散", () => {
   const onlyUnit = packagesToInvalidate([unit], reg, topo);
   assert.ok(onlyUnit.length > 0);
   assert.deepEqual(packagesToInvalidate([w1, w2, unit], reg, topo), onlyUnit, "worker 不扩散");
-  const lanUnit = "packages/dsh-lan-proxy/test/unit/apply.test.ts";
-  const lanOnly = packagesToInvalidate([lanUnit], reg, topo);
-  assert.deepEqual(packagesToInvalidate([w1, lanUnit], reg, topo), lanOnly, "跨包不扩散");
+  const mcpUnit = "packages/dsh-mcp-manager/test/unit/apply.test.ts";
+  const mcpOnly = packagesToInvalidate([mcpUnit], reg, topo);
+  assert.deepEqual(packagesToInvalidate([w1, mcpUnit], reg, topo), mcpOnly, "跨包不扩散");
 });
 
 test("P3c-① supportFileEntries 三路返回/face边界/null哨兵行为锁定", () => {

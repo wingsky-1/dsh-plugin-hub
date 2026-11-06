@@ -3,7 +3,7 @@ name: dsh-plugin-hub-dev
 description: >
   DSH 插件开发与修改规范——**公开仓库 github/dsh-plugin-hub 专用**（项目级 skill）。
   修改/新增 dsh-plugin-hub 仓库内插件（@wingsky-1/dsh-*，含 dsh-notifier /
-  dsh-lan-proxy / dsh-mcp-manager / dsh-provider-usage / dsh-verify-isolated）
+  dsh-mcp-manager / dsh-provider-usage / dsh-verify-isolated）
   的宿主端（src/index.ts）或
   客户端（src/client/）代码前加载。触发信号：用户要求改/加/修 hub 插件源码、客户端
   干净模块、拆 CSS、src/client 目录、inlineBareImports、构建/契约门禁。
@@ -68,7 +68,9 @@ IIFE 工厂、Symbol.toStringTag 装配、**load id === 包名** define 注入�
   （bundle-host 经 `__DSH_ROUTES__` define 注入客户端）。
 - 只 import `../../shared/*` 与 Node 内置；第三方运行时依赖一律由 esbuild `--bundle`
   内联（发布物零运行时 npm 依赖）。
-- 路由强制 loopback 围栏（非回环 403 / 方法错 405）+ `/health` 必项。
+- 路由保留 loopback 快路径；非回环短请求经官方 `requestRejection`，401/403/异常
+  fail-closed，通过后才判方法错 405。非回环 SSE 还须经 `connection.admit` 保留
+  PeerScope 并绑定释放生命周期；`/health` 必项。
 - patch id `dsh-<name>`；声明 `dsh.client` 必须有 `exports["./client"]`。
 
 ## 4. 目录 / 共享模块
@@ -97,7 +99,8 @@ pnpm gate:pr
   arrive 可解析、`exports.apply/inject` 装配。
 - 测试文件（`test/**/*.test.ts`，由包内 `pnpm test` → `run-vitest.mjs` 以 vitest
   直跑）用 `assertClientSourceContract`/`assertClientProductContract`（兼容三种产物
-  形态）；路由 403/405 围栏用例；两端路由一致性断言。
+  形态）；loopback 快路径、官方认证 401/403/undefined、405 与长流 Peer 生命周期用例；
+  两端路由一致性断言。
 - 新增/修改客户端后确认无游离 css（CSS 全内联）、`lib/` 是构建产物不手改。
 - **阶段式门禁 + 阶段 commit**：每个逻辑阶段（一次评审项修复 / 一个里程碑）结束即
   独立收口——全门禁跑绿 + 工作树/产物核对 + 阶段 commit（一句话改什么），不攒到

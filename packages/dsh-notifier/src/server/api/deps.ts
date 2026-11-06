@@ -52,6 +52,22 @@ export type OutgoingFrame = pipelineApi.OutgoingFrame;
 /** 宿主路由注册口：与宿主契约同源，不在两侧各写一遍。 */
 export type RegisterRoute = (route: WebRoute) => () => void;
 
+/** 官方 PeerScope 中本域长连接只需绑定的 Cordis 生命周期面。 */
+export interface PeerLifecyclePort {
+  readonly ctx: {
+    effect(execute: () => () => void, label?: string): unknown;
+  };
+}
+
+/** api 域一次注入的官方 connection 能力；叶子模块不直接引共享实现。 */
+export interface RemoteAccessPort {
+  fence(request: Parameters<WebRoute["handler"]>[0]): 401 | 403 | undefined;
+  admitStream(
+    request: Parameters<WebRoute["handler"]>[0],
+  ): { readonly peer?: PeerLifecyclePort } | { readonly rejection: 401 | 403 };
+  bindPeer(peer: PeerLifecyclePort, cleanup: () => void, label: string): () => void;
+}
+
 /** 帧入口：只有 `on` 没有 `emit`——api 域是帧的**消费者**，给它发帧的能力等于让它能伪造通知。 */
 interface FrameInlet {
   onFrame(handler: (payload: OutgoingFrame) => void): () => void;
@@ -64,6 +80,8 @@ export interface ApiDeps {
   frames: FrameInlet;
   /** 失败出口（端点内的异常一律在这里出声，不静默吞）。 */
   logger: LoggerPort;
+  /** 官方 connection 的短请求围栏与长连接 Peer 生命周期能力。 */
+  remote: RemoteAccessPort;
   config: ConfigPort;
   stores: StorePort;
   /** 下游裁决管线：页面上的测试按钮经它提交。 */

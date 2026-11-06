@@ -32,14 +32,18 @@ import type {} from "@deepseek-ai/dsh-tools";
 import type { Context } from "@deepseek-ai/cordis";
 import { dirname } from "node:path";
 import { installSettingsNamespace } from "../../../shared/settings-namespace.js";
-import { sseData } from "../../../shared/host-utils.js";
+import {
+  liveConnectionAdmission,
+  liveConnectionPeerAdmission,
+  sseData,
+} from "../../../shared/host-utils.js";
 import type { McpManagerService } from "./shared/interface.ts";
 import { installOrchestrator, McpManager } from "./server/connection/orchestrator/interface.ts";
 import * as apiApi from "./server/api/interface.ts";
 import {
-  makeEventsRoute,
-  makeHealthRoute,
-  makeRoutes,
+  makeEventsRouteWithAccess,
+  makeHealthRouteWithAccess,
+  makeRoutesWithAccess,
   uiConfigChangedFrame,
 } from "./server/api/interface.ts";
 import * as catalogApi from "./server/catalog/interface.ts";
@@ -400,9 +404,12 @@ function registerCatalogInjection(
  * 状态变化 → 广播 SSE 帧（hub 在 makeEventsRoute 中惰性创建，#515）。
  */
 function setupRoutesAndBroadcast(ctx: Context, manager: McpManager): () => void {
-  const routes = makeRoutes(manager);
-  const eventsRoute = makeEventsRoute(manager);
-  const healthRoute = makeHealthRoute(manager);
+  // 两类源都只闭包 Context；每次请求/连接现取 ctx.connection，不缓存 service。
+  const remoteAdmission = liveConnectionAdmission(ctx);
+  const remotePeerAdmission = liveConnectionPeerAdmission(ctx);
+  const routes = makeRoutesWithAccess(manager, undefined, { remoteAdmission });
+  const eventsRoute = makeEventsRouteWithAccess(manager, { remotePeerAdmission });
+  const healthRoute = makeHealthRouteWithAccess(manager, { remoteAdmission });
   const disposers = [...routes, eventsRoute, healthRoute].map((route) =>
     ctx.webServer.register(route),
   );

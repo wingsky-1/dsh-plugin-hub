@@ -164,6 +164,57 @@ interface ConcurrencyCallRecord {
   tool: string;
 }
 
+interface ConcurrencyTarget {
+  readonly spec: RootSpec;
+  readonly registeredName: string;
+}
+
+function concurrencyTargets(specs: readonly RootSpec[]): ConcurrencyTarget[] {
+  return specs.map((spec) => ({
+    spec,
+    registeredName: publicToolName(fixtureWorkspaceIds.idFor(spec.root, spec.server), spec.tool),
+  }));
+}
+
+function concurrencyHost(options: {
+  readonly specs: readonly RootSpec[];
+  readonly fakeCtxTools: ReturnType<typeof fakeToolsService>;
+}) {
+  const { specs, fakeCtxTools } = options;
+  return {
+    ctx: {
+      tools: fakeCtxTools,
+      get(name: string) {
+        if (name !== "loader") return undefined;
+        return {
+          import: async (specifier: string) => {
+            if (specifier !== "@deepseek-ai/dsh-tools/pipeline") {
+              throw new Error(`unexpected loader import ${specifier}`);
+            }
+            return fakeCtxTools.defaultPipelineModule;
+          },
+        };
+      },
+    },
+    logger: { info: () => {}, warn: () => {}, error: () => {} },
+    projectServersFor: async (root: string) =>
+      specs
+        .filter((spec) => spec.root === root)
+        .map((spec) => ({
+          name: spec.server,
+          transport: "stdio",
+          command: "noop",
+          enabled: true,
+        })),
+    redactionServers: () => [],
+    globalServers: () => [],
+    normalizedProjectRoot: async (cwd: string | undefined) => cwd,
+    saveUserState: async () => {},
+    emitStatus: () => {},
+    catalogCachePath: tempCatalogCache((dir) => tempDirs.push(dir)),
+  };
+}
+
 /**
  * 装一套最小组合根：两个会话（各自 session 对象 + 各自活动目录）、同名 server/tool、
  * 中间层单元表按 root 分开记账。
@@ -198,10 +249,7 @@ async function makeConcurrencyFixture(
   // 判据要证明的是「在飞调用不因目录切换改投」，挂高层会绕过真实执行路径。
   // 远端执行器收到的是注册名 `mcp__<id>__<tool>`，不是 `@<root>/<server>`：
   // 先用同一份 id 表把注册名还原成 spec，确保 barrier 与落点记录仍按真实目标判定。
-  const targets = specs.map((spec) => ({
-    spec,
-    registeredName: publicToolName(fixtureWorkspaceIds.idFor(spec.root, spec.server), spec.tool),
-  }));
+  const targets = concurrencyTargets(specs);
   const fakeCtxTools = fakeToolsService({
     execute: async (input: unknown) => {
       const fullName = String((input as { name?: unknown }).name ?? "");
@@ -218,25 +266,7 @@ async function makeConcurrencyFixture(
       };
     },
   });
-  const host = {
-    ctx: { tools: fakeCtxTools },
-    logger: { info: () => {}, warn: () => {}, error: () => {} },
-    projectServersFor: async (root: string) =>
-      specs
-        .filter((spec) => spec.root === root)
-        .map((spec) => ({
-          name: spec.server,
-          transport: "stdio",
-          command: "noop",
-          enabled: true,
-        })),
-    redactionServers: () => [],
-    globalServers: () => [],
-    normalizedProjectRoot: async (cwd: string | undefined) => cwd,
-    saveUserState: async () => {},
-    emitStatus: () => {},
-    catalogCachePath: tempCatalogCache((dir) => tempDirs.push(dir)),
-  };
+  const host = concurrencyHost({ specs, fakeCtxTools });
   fakeCtxTools.entries = currentToolSchemas;
   const mw = new McpMiddleware(host as never);
   // 真实装载链的 connected 前置：单元先由 projectUnitFor 建立（不触发惰性连接），
@@ -281,10 +311,25 @@ async function makeConcurrencyFixture(
 
   /** 以某会话身份执行 ws_mcp_call。 */
   async function call(as: ReturnType<typeof session>, server: string, tool: string) {
+    const agent = { session: as.session };
+    const outer = { name: "ws_mcp_call" } as ToolDefinition;
+    const toolSet = {
+      dispose() {},
+      view(scope: unknown) {
+        return scope === agent ? new Map([["ws_mcp_call", outer]]) : new Map();
+      },
+    };
     return def("ws_mcp_call").execute(
       // server 必须是 `@<root>/<name>` 全名（dispatch 契约），这里按当前活动目录拼。
       { server: `@${activeBySession.get(as.session)}/${server}`, tool, arguments: "{}" },
-      { agent: { session: as.session }, signal: new AbortController().signal } as never,
+      {
+        callId: "dynamic-root",
+        rootCallId: "dynamic-root",
+        token: Symbol("dynamic-outer"),
+        agent,
+        toolSet,
+        signal: new AbortController().signal,
+      } as never,
     );
   }
 

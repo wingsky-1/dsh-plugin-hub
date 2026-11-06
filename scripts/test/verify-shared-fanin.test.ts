@@ -343,13 +343,11 @@ test("#792 PR2 登记偏差修正：四行登记以派生结果为准", () => {
   );
   // settings-namespace：原快照多登 notifier（零引用）
   assert.deepEqual(rowOf(result, "settings-namespace").consumers, [
-    "dsh-lan-proxy",
     "dsh-mcp-manager",
     "dsh-provider-usage",
   ]);
   // client/i18n：原快照漏登 dsh-lan-proxy
   assert.deepEqual(rowOf(result, "client/i18n").consumers, [
-    "dsh-lan-proxy",
     "dsh-mcp-manager",
     "dsh-provider-usage",
   ]);

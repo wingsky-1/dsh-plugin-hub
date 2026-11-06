@@ -17,7 +17,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { guardLoopbackMethod, isLoopbackRequest } from "../../shared/host-utils.js";
+import {
+  admitLongLivedRequest,
+  bindPeerLifecycle,
+  guardLoopbackMethod,
+  isLoopbackRequest,
+  liveConnectionAdmission,
+  liveConnectionPeerAdmission,
+  routeFenceRejection,
+  type RemoteAdmissionSource,
+  type RemotePeerAdmissionSource,
+} from "../../shared/host-utils.js";
 
 /**
  * 请求桩的最小面：守卫只读 method / socket.remoteAddress / headers，IncomingMessage
@@ -210,4 +220,260 @@ test("#549 guardLoopbackMethod 不透传时 cross-site 仍 403", () => {
   );
   assert.equal(allow, false, "不传 options 的守卫仍拒绝 cross-site");
   assert.equal(rec.status, 403);
+});
+
+// ---- rc.1 native LAN：非回环路径复用官方 connection admission ----
+
+function remoteReq(overrides: Partial<ReqStub> = {}): IncomingMessage {
+  return fakeReq({
+    socket: { remoteAddress: "10.0.0.2" },
+    headers: { host: "10.0.0.2:3080" },
+    ...overrides,
+  });
+}
+
+test("非回环：官方 admission undefined 后按方法白名单放行", () => {
+  const { rec, res } = fakeRes();
+  const allow = guardLoopbackMethod(remoteReq(), res, ["GET"], {
+    remoteAdmission: () => () => undefined,
+  });
+  assert.equal(allow, true);
+  assert.equal(rec.status, 0);
+  assert.equal(rec.body, "");
+});
+
+test("非回环：401/403 原样返回且先于方法白名单", () => {
+  for (const status of [401, 403] as const) {
+    const { rec, res } = fakeRes();
+    const allow = guardLoopbackMethod(remoteReq({ method: "DELETE" }), res, ["GET"], {
+      remoteAdmission: () => () => status,
+    });
+    assert.equal(allow, false, `${status} 不放行`);
+    assert.equal(rec.status, status);
+    assert.equal(
+      rec.body,
+      status === 401 ? '{"error":"unauthorized"}' : '{"error":"forbidden: loopback-only"}',
+    );
+  }
+});
+
+test("非回环：认证通过后才检查方法，错方法 405", () => {
+  const { rec, res } = fakeRes();
+  const allow = guardLoopbackMethod(remoteReq({ method: "POST" }), res, ["GET"], {
+    remoteAdmission: () => () => undefined,
+  });
+  assert.equal(allow, false);
+  assert.equal(rec.status, 405);
+  assert.equal(rec.body, '{"error":"method not allowed: POST"}');
+});
+
+test("非回环：admission 缺失、异常或返回未知值均 fail-closed 403", () => {
+  const cases: Array<[string, RemoteAdmissionSource | undefined]> = [
+    ["source missing", undefined],
+    ["source returns missing", () => undefined],
+    [
+      "source throws",
+      () => {
+        throw new Error("connection unloaded");
+      },
+    ],
+    [
+      "admission throws",
+      () => () => {
+        throw new Error("admission failed");
+      },
+    ],
+    ["admission returns unknown", () => (() => 500) as unknown as () => 401 | 403 | undefined],
+  ];
+  for (const [name, remoteAdmission] of cases) {
+    const { rec, res } = fakeRes();
+    const allow = guardLoopbackMethod(remoteReq({ method: "GET" }), res, ["GET"], {
+      remoteAdmission,
+    });
+    assert.equal(allow, false, `${name} 不放行`);
+    assert.equal(rec.status, 403, `${name} → 403`);
+  }
+});
+
+test("liveConnectionAdmission 每次请求实时读取 connection，卸载后旧对象不能继续放行", () => {
+  let reads = 0;
+  let connection: unknown = {
+    requestRejection() {
+      return undefined;
+    },
+  };
+  const source = liveConnectionAdmission({
+    get(name, strict) {
+      assert.equal(name, "connection");
+      assert.equal(strict, false);
+      reads += 1;
+      return connection;
+    },
+  });
+
+  assert.equal(routeFenceRejection(remoteReq(), { remoteAdmission: source }), undefined);
+  connection = undefined;
+  assert.equal(routeFenceRejection(remoteReq(), { remoteAdmission: source }), 403);
+  assert.equal(reads, 2, "每次请求都重新读取 Context");
+});
+
+test("liveConnectionAdmission 不丢失 service this，Context 读取抛错时 fail-closed", () => {
+  const connection = {
+    marker: "current",
+    requestRejection(this: { marker: string }) {
+      return this.marker === "current" ? undefined : 403;
+    },
+  };
+  const source = liveConnectionAdmission({ get: () => connection });
+  assert.equal(routeFenceRejection(remoteReq(), { remoteAdmission: source }), undefined);
+
+  const broken = liveConnectionAdmission({
+    get() {
+      throw new Error("scope disposed");
+    },
+  });
+  assert.equal(routeFenceRejection(remoteReq(), { remoteAdmission: broken }), 403);
+});
+
+test("非回环 Host/Origin/cross-site 由官方 admission 继续围栏", () => {
+  const officialLikeFence = (req: IncomingMessage): 401 | 403 | undefined => {
+    if (req.headers["sec-fetch-site"] === "cross-site") return 403;
+    if (req.headers.origin !== undefined) {
+      try {
+        if (new URL(req.headers.origin).host !== req.headers.host) return 403;
+      } catch {
+        return 403;
+      }
+    }
+    return 401;
+  };
+  const options = { remoteAdmission: () => officialLikeFence };
+  assert.equal(routeFenceRejection(remoteReq(), options), 401);
+  assert.equal(
+    routeFenceRejection(
+      remoteReq({
+        headers: {
+          host: "10.0.0.2:3080",
+          origin: "https://attacker.example",
+        },
+      }),
+      options,
+    ),
+    403,
+  );
+  assert.equal(
+    routeFenceRejection(
+      remoteReq({
+        headers: {
+          host: "10.0.0.2:3080",
+          "sec-fetch-site": "cross-site",
+        },
+      }),
+      options,
+    ),
+    403,
+  );
+});
+
+test("长连接 admission：loopback 不绑定 Peer，非回环保留官方 PeerScope", () => {
+  assert.deepEqual(admitLongLivedRequest(fakeReq()), {});
+
+  let peerCleanupCalls = 0;
+  const peer = {
+    ctx: {
+      effect(_execute: () => () => void) {
+        peerCleanupCalls += 1;
+        return () => {};
+      },
+    },
+  };
+  assert.deepEqual(
+    admitLongLivedRequest(remoteReq(), {
+      remotePeerAdmission: () => () => ({ peer }),
+    }),
+    { peer },
+  );
+  assert.equal(peerCleanupCalls, 0, "admission 本身不注册 effect");
+});
+
+test("长连接 admission：401/403 保持，缺失/异常/未知结果 fail-closed", () => {
+  for (const status of [401, 403] as const) {
+    assert.deepEqual(
+      admitLongLivedRequest(remoteReq(), {
+        remotePeerAdmission: () => () => ({ rejection: status }),
+      }),
+      { rejection: status },
+    );
+  }
+  const cases: Array<RemotePeerAdmissionSource | undefined> = [
+    undefined,
+    () => undefined,
+    () => {
+      throw new Error("connection unloaded");
+    },
+  ];
+  for (const source of cases) {
+    assert.deepEqual(admitLongLivedRequest(remoteReq(), { remotePeerAdmission: source }), {
+      rejection: 403,
+    });
+  }
+  const invalid = (() => ({ peer: {} })) as unknown as () => { peer: never };
+  assert.deepEqual(admitLongLivedRequest(remoteReq(), { remotePeerAdmission: () => invalid }), {
+    rejection: 403,
+  });
+});
+
+test("peer lifecycle：官方 ctx effect 释放与客户端 disposer 都能移除长连接", () => {
+  let effectDisposed = false;
+  let releasePeer: (() => void) | undefined;
+  const peer = {
+    ctx: {
+      effect(execute: () => () => void, label?: string) {
+        assert.equal(label, "probe: stream");
+        const cleanup = execute();
+        releasePeer = () => {
+          if (effectDisposed) return;
+          effectDisposed = true;
+          cleanup();
+        };
+        return releasePeer;
+      },
+    },
+  };
+  let cleanups = 0;
+  const dispose = bindPeerLifecycle(
+    peer,
+    () => {
+      cleanups += 1;
+    },
+    "probe: stream",
+  );
+  releasePeer?.();
+  assert.equal(cleanups, 1, "Peer 释放执行清理");
+  dispose();
+  assert.equal(cleanups, 1, "官方 disposer 幂等，客户端断开的 disposer 不重复清理");
+});
+
+test("liveConnectionPeerAdmission 每次连接请求现读 connection 并校验 admit 结果", () => {
+  let reads = 0;
+  const peer = { ctx: { effect: () => () => {} } };
+  let connection: unknown = {
+    admit(this: { marker: string }, req: IncomingMessage) {
+      assert.equal(this.marker, "current");
+      return req.headers.cookie === "valid" ? { peer } : { rejection: 401 };
+    },
+    marker: "current",
+  };
+  const source = liveConnectionPeerAdmission({
+    get() {
+      reads += 1;
+      return connection;
+    },
+  });
+  assert.deepEqual(source()?.(remoteReq({ headers: { host: "10.0.0.2:3080", cookie: "valid" } })), {
+    peer,
+  });
+  connection = undefined;
+  assert.equal(source(), undefined, "connection 卸载后不得复用旧 Peer admission");
+  assert.equal(reads, 2);
 });

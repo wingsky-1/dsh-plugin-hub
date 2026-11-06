@@ -31,15 +31,15 @@ import {
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CI_YML = readFileSync(join(ROOT, CI_WORKFLOW), "utf8");
 
-test("parseFilterBlock：真实 ci.yml 的 filters 块可解析，且含全局面与 6 个包面", () => {
+test("parseFilterBlock：真实 ci.yml 的 filters 块可解析，且含全局面与 5 个包面", () => {
   const filters = parseFilterBlock(CI_YML);
   assert.ok(filters !== null, "filters 块必须可解析（不可解析 → 本地静默回退全量）");
   assert.ok(Array.isArray(filters.global) && filters.global.length > 0, "global 面必须存在且非空");
+  // #1159 起 lan-proxy 退役删包，其 filters 面同步移除
   for (const pkg of [
     "dsh-notifier",
     "dsh-mcp-manager",
     "dsh-provider-usage",
-    "dsh-lan-proxy",
     "dsh-verify-isolated",
     "dsh-plugins-all",
   ]) {
@@ -118,21 +118,21 @@ test("matchFilterBlock：包内改动命中该包；全局面命中 global；纯
     packages: [],
   });
   // 段配置是变异单一事实源（#322）：改段配置必须命中该包
-  assert.deepEqual(matchFilterBlock(filters, ["stryker.conf.d/dsh-lan-proxy-config.json"]), {
+  assert.deepEqual(matchFilterBlock(filters, ["stryker.conf.d/dsh-notifier-pipeline.json"]), {
     globalHit: false,
-    packages: ["dsh-lan-proxy"],
+    packages: ["dsh-notifier"],
   });
 });
 
 test("planChangedScope：全局面命中回退全量；单包改动只命中该包；解析失败回退全量", () => {
-  const allPackages = ["dsh-lan-proxy", "dsh-notifier", "dsh-plugins-all"];
+  const allPackages = ["dsh-notifier", "dsh-mcp-manager", "dsh-plugins-all"];
 
   const scoped = planChangedScope({
     root: ROOT,
-    files: ["packages/dsh-lan-proxy/src/server/proxy/impl/proxy.ts"],
+    files: ["packages/dsh-mcp-manager/src/server/ports/orchestrator.ts"],
     allPackages,
   });
-  assert.deepEqual(scoped.hitPackages, ["dsh-lan-proxy"]);
+  assert.deepEqual(scoped.hitPackages, ["dsh-mcp-manager"]);
   assert.equal(scoped.globalHit, false);
 
   const global = planChangedScope({
@@ -169,7 +169,7 @@ test("planChangedScope：全局面命中回退全量；单包改动只命中该�
     writeFileSync(join(tmpRoot, CI_WORKFLOW), "name: CI\non:\n  pull_request:\n", "utf8");
     const broken = planChangedScope({
       root: tmpRoot,
-      files: ["packages/dsh-lan-proxy/src/server/proxy/impl/proxy.ts"],
+      files: ["packages/dsh-mcp-manager/src/server/ports/orchestrator.ts"],
       allPackages,
     });
     assert.deepEqual(broken.hitPackages, allPackages, "filters 不可解析 → 全量（fail-closed）");

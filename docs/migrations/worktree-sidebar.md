@@ -1,14 +1,18 @@
-# dsh-worktree-sidebar 退役迁移（DSH 0.2.1-rc.2）
+# dsh-worktree-sidebar 退役迁移
 
 状态：`@wingsky-1/dsh-worktree-sidebar` 已从当前源码树和 `dsh-plugins-all` 聚合包移除，
 不再随下一版聚合包分发；已发布版本仍可从 npm 安装。退役范围与进度见
 [#1141](https://github.com/wingsky-1/dsh-plugin-hub/issues/1141)。
 
-本页面向已安装该包、需要迁到官方能力的用户；迁移完成后可卸载旧包。
+本页面向已安装旧包、需要迁到官方能力的用户。退役对象是外部
+`@wingsky-1/dsh-worktree-sidebar` 适配包；DSH 自身的 manifest 中，可选官方 Git
+Worktrees bundle 在 `0.2.2-rc.1` 仍可按官方 metadata 机制加载，不能把旧外置包退役误读为
+官方能力已退役。
 
-## 官方提供什么（0.2.1-rc.2）
+## 官方提供什么
 
-DSH `0.2.1-rc.2` 提供**可选的实验性官方 Git Worktrees**：在「插件 → 官方 → Git 工作树」启用后可用：
+DSH `0.2.1-rc.2` 已提供**可选的实验性官方 Git Worktrees**，`0.2.2-rc.1` 仍保留该可选
+bundle：在官方插件管理中启用后可用：
 
 - `create_worktree({ name?, from? })`：新建检出目录（默认 `.agents/worktrees/<name>`），并切换当前 Session 的工作目录；
 - `working_directory({ cd: "/absolute/path" })`：切换到已有目录。
@@ -33,7 +37,8 @@ DSH `0.2.1-rc.2` 提供**可选的实验性官方 Git Worktrees**：在「插件
 ## 迁移步骤
 
 1. 在旧环境记下需要保留的绑定路径，并运行 `git worktree list` 核对真实检出目录。
-2. **先升级并验证** DSH `0.2.1-rc.2`：在官方插件管理器开启 Git 工作树，按目标目录使用
+2. **先升级并验证** 目标 rc 版本（当前适配基线为 `0.2.2-rc.1`）：在官方插件管理器中
+   确认可选 Git Worktrees bundle 仍可加载并开启，按目标目录使用
    `working_directory({ cd: "/absolute/path" })`，或为新工作树调用 `create_worktree`；
    核对当前目录、Files、`@`、命令与权限表现，确认能够接受上表差异。
 3. 卸载旧包（见下节）。独立安装与聚合包安装的处理方式不同：

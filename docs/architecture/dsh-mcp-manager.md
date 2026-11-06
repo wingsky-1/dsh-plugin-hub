@@ -272,11 +272,11 @@ M3（能力缺口单列）：`allowTools`/`denyTools` 准入闸随策略键消�
 
 ### 3.4 管理路由与方法围栏
 
-路由清单的唯一事实源是 `src/shared/routes.ts#ROUTES`（11 条，键序与值均为跨端契约），围栏数据见 `ROUTE_FENCE`（非 loopback 403、白名单外 405，**403 先于 405**；`config` 是唯一有 loopback 豁免的路由，GET 只读非敏感展示）：
+路由清单的唯一事实源是 `src/shared/routes.ts#ROUTES`（11 条，键序与值均为跨端契约）。loopback 走快路径；非回环短请求由官方 `requestRejection` 返回 401/403/undefined，异常 fail-closed，认证通过后才判方法错 405。`events` 的非回环长流还须经 `connection.admit` 保留 admitted PeerScope。`config` 的 GET 保留只读端点级例外：
 
 | 路由 | 方法 | 说明 |
 |---|---|---|
-| `/api/dsh-mcp/config` | GET/POST | UI 配置（GET 允许非 loopback 只读；POST loopback-only，未知顶层键 400 且不落盘） |
+| `/api/dsh-mcp/config` | GET/POST | UI 配置（GET 允许非 loopback 只读；POST 需 loopback 或官方身份准入，未知顶层键 400 且不落盘） |
 | `/api/dsh-mcp/servers` | GET/POST/PATCH/DELETE | 纯读快照 / 新增 / 更新 / 删除（`?name=&scope=`） |
 | `/api/dsh-mcp/session` | POST | 切换会话 cwd（`{cwd}`） |
 | `/api/dsh-mcp/resume` | POST | 回前台受控重建当前工作空间连接 |
@@ -320,7 +320,7 @@ M3（能力缺口单列）：`allowTools`/`denyTools` 准入闸随策略键消�
 | --- | --- | --- |
 | env 净化 | `config/impl/env`（`SECRET_ENV_NAME` 形状） | 父进程环境过滤敏感变量后再合并显式 env（显式值支持 `${ENV}` 引用展开），避免把宿主机密透传给 MCP 子进程 |
 | redactor 脱敏 | `pipeline/impl/redact` | 从全部服务器配置收集 secret，错误消息逐值替换 `[REDACTED]` |
-| loopback 围栏 | `ROUTE_FENCE` + 仓库 `shared/host-utils.js` | 403 先于 405；`config` GET 只读豁免。经 lan-proxy 回环上游的同源请求可满足围栏（见 [LAN proxy 架构](dsh-lan-proxy.md)） |
+| API 安全围栏 | `ROUTE_FENCE` + `shared/host-utils.ts` + 官方 `requestRejection` / `admit` seam | loopback 快路径保留。非回环短请求仅当官方验证返回 `undefined` 时进入方法判定；非回环 SSE 还须绑定 admitted Peer 生命周期，释放后停止广播并关闭。异常、401/403 或绑定失败均 fail-closed |
 | 落盘权限 | `paths.ts` 登记表 + `file-io` | 配置 `0o600`，其余登记 `0o644`、项目随缘（见 §3.1）；未登记拒绝写 |
 | stdio 继承宿主权限 | 进程模型 | MCP 服务器命令在宿主进程权限下执行，仅配置可信服务器；工具结果可能含敏感信息，先确认再操作 |
 | 工作空间隔离 | `workspace` 全名归一 | 调用方会话 cwd 路由 + server 全名一致性校验，防跨空间串台；工具级禁用三入口统一经 `isToolDenied` 裁决 |

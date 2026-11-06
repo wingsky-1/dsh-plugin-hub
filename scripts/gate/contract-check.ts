@@ -210,7 +210,7 @@ console.log(failed === 0 ? "客户端契约：全部通过" : `客户端契约�
   // 量级 #13：报错附「四同步清单」指引（不改判红语义）。
   if (matrix.problems.length > 0) {
     console.log(
-      "hint config-matrix | 新增/修改配置键请四同步——① 事实源表（lan-proxy Config / notifier DEFAULT_CONFIG）② validators/hints ③ normalize 白名单与透传排除 ④ 客户端渲染/编辑 + smoke 断言 + README 配置节；补齐后重跑 pnpm contract",
+      "hint config-matrix | 新增/修改配置键请四同步——① 事实源表（plugins-manifest.json 的 configSurfaces；当前 notifier DEFAULT_CONFIG）② validators/hints ③ normalize 白名单与透传排除 ④ 客户端渲染/编辑 + smoke 断言 + README 配置节；补齐后重跑 pnpm contract",
     );
   }
   const matrixFailed = matrix.problems.length > 0;

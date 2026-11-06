@@ -15,7 +15,13 @@
  */
 
 import type { Context } from "@deepseek-ai/cordis";
-import type { ToolDefinition, ToolExecution, PreToolDecision } from "@deepseek-ai/dsh-tools";
+import type {
+  ToolDefinition,
+  ToolExecution,
+  ToolExecutionResult,
+  PreToolDecision,
+  ToolRunContext,
+} from "@deepseek-ai/dsh-tools";
 import type { McpMiddleware, ProjectUnit } from "../connection/runtime/interface.ts";
 import { LIST_DEFAULT_TOOLS_PER_SERVER } from "../shared/interface.ts";
 import type { ModelContentBlock } from "../shared/interface.ts";
@@ -53,7 +59,7 @@ interface MiddlewareToolContext {
   resolveRoot: (agent: unknown) => Promise<string | undefined>;
   stats?: McpStatsCollector;
   /**
-   * A+ 图片准入的模型面投影表。键是**本次 exec 对象身份**（宿主在 `execute` 与
+   * A+ 图片策略的模型面投影表。键是**本次 exec 对象身份**（宿主在 `execute` 与
    * `finalizeContent` 之间递的是同一个对象，官方也以它做 WeakMap 键）——不用模块级单例，
    * 并发调用之间不会串投影。
    */
@@ -344,11 +350,11 @@ async function executeCall(
   toolCtx: MiddlewareToolContext,
   args: unknown,
   /**
-   * 完整执行身份。为什么不是 `Pick<ToolRunContext, ...>`：图片准入的投影要以**本 exec 对象**
-   * 为键存进 WeakMap，而 `finalizeContent` 收到的是 `ToolExecution`——两处必须是同一个类型，
-   * 否则同一对象在两侧被读成不同形状（`ToolRunContext extends ToolExecution`，收窄无损）。
+   * 完整执行身份。为什么不是 `Pick<ToolRunContext, ...>`：A+ 图片投影要以**本 exec 对象**
+   * 为键存进 WeakMap，而 `finalizeContent` 收到的是 `ToolExecution`——两处必须表达同一个
+   * 对象身份（`ToolRunContext extends ToolExecution`，收窄无损）。
    */
-  exec: ToolExecution,
+  exec: ToolRunContext,
 ) {
   const root = await toolCtx.resolveRoot(exec.agent);
   if (root === undefined) throw new Error("ws_mcp_call: 无法确定工作空间，请先选择工作区");
@@ -356,32 +362,43 @@ async function executeCall(
   if (server === "" || tool === "") throw new Error("ws_mcp_call: server 与 tool 均为必填");
   const { parsed, unit } = await assertCallableTarget(toolCtx, server, root);
   await toolCtx.mw.ensureConnected(unit.root, parsed.server);
-  // #767 笔 1b 交付物 C（F4 收口）：这里的 agent 交给 dispatch 后**只服务封装直呼分支**
-  // （它的 execute 依赖 agent.session.header.cwd 做 projectPath 补全）；远端转发分支不再携带
-  // agent（去 agent 后官方那次图片准入退化成本包自持的 image-admission，见 executeCall 尾部）。
-  // callId/rootCallId/token 供 dispatch 合成子调用 id 并透传 parent（#767 S1-4d）。
+  // agent/toolSet/callId/rootCallId/token 共同构成 nested execution identity。远端分支必须
+  // 原样保留，才能维持 scope、step admission、PTC parent 判定与取消语义。
   const startTime = Date.now();
   let value: unknown;
+  let nestedModelContent: readonly ModelContentBlock[] | undefined;
   try {
-    value = await toolCtx.mw.callTool(server, tool, callArguments, exec.signal, {
+    // callTool 的已发布签名保持原状；变量断开了 excess-property 检查，运行时仍携带
+    // nested pipeline 所需的外层 ToolRunContext 字段。
+    const nestedIdentity = {
       agent: exec.agent,
       callId: exec.callId,
       ...(exec.rootCallId === undefined ? {} : { rootCallId: exec.rootCallId }),
       // token 即本次调用的身份：子调用以它为 parent，guard 据此区分「模型直呼」与「我方转发」。
       ...(exec.token === undefined ? {} : { parent: exec.token }),
-    });
+      toolSet: exec.toolSet,
+      deferContext: exec.deferContext,
+      concludeTurn: exec.concludeTurn,
+      onModelContent: (content: Extract<ToolExecutionResult, { isError: false }>["content"]) => {
+        nestedModelContent = content;
+      },
+    };
+    value = await toolCtx.mw.callTool(server, tool, callArguments, exec.signal, nestedIdentity);
+    // 官方 nested pipeline 的 projectContent 已消费首次 official save 并经 hook 交回模型面；
+    // `value` 仍保持原协议 content。A+ 会先复核本包上限，再决定复用或诊断。
     recordCallOk(toolCtx, parsed.server, tool, startTime);
   } catch (error) {
     recordCallFailed(toolCtx, parsed.server, tool, startTime, error);
     throw error;
   }
-  // 交付物 B（A+ 自持图片准入）：远端原始图片块出现时才建模型面投影，按 exec 键控存进表；
-  // 无图片（或图片块已是模型面形态）时不建映射，finalizeContent 返回 undefined，继续走 render。
-  // 投影基于**这里 return 的 value 的 content**（含 dispatch 的 stale 前置提示），不是渲染产物。
-  // 任何拒绝都只在投影里落诊断文本，本函数不因图片面抛错。
+  // A+ 图片策略：先复核远端原始 content 的统一硬上限；官方 nested definition 已有物化投影时
+  // 直接复用，避免二次落库；无该信号的 custom tool 才走自持准入，失败只降级为诊断。
+  // 投影按 exec 键控存入表；无图片（或图片块已是模型面形态）时 finalizeContent 返回 undefined，
+  // 继续走 render。投影基于这里 return 的 value.content（含 stale 前置提示），不是渲染产物。
   const projection = await projectImageAdmission({
     agent: exec.agent,
     content: callValueContent(value),
+    projectedContent: nestedModelContent,
     signal: exec.signal,
     faces: toolCtx.faces,
     formatBlock: formatCallContentBlock,
@@ -437,7 +454,7 @@ function buildCallTool(toolCtx: MiddlewareToolContext, callTimeoutMs: number): T
     // 外层超时由调用方现算递入（#935：max(全量源) + 25s 内部尾；旧 55s 写死值已删）。
     timeoutMs: callTimeoutMs,
     /**
-     * 官方 `applyFinalContent` 接缝：把本包自持的图片准入投影换进模型面（返回 `undefined`
+     * 官方 `applyFinalContent` 接缝：把 A+ 图片投影换进模型面（返回 `undefined`
      * 则保留原内容 = 继续走 `render`）。命中即删——每次执行只消费一次。`isError` 时把内容
      * 交回宿主：错误面不该被换面。
      */
@@ -906,7 +923,7 @@ function registerPreExecuteGuard(
     ): Promise<PreToolDecision> {
       const name = exec?.name;
       if (typeof name !== "string" || name === "") return next();
-      // 裁定 R/Z：判发起者不判名字。我方 dispatch 经 ctx.tools.execute 转发出去的子调用，
+      // 裁定 R/Z：判发起者不判名字。我方 dispatch 经公开 nested pipeline 转发出去的子调用，
       // 其 parent 就是外层 ws_mcp_call 的 token，派发前已登记进 mw.forwarding——这里必须在
       // 任何 mcp__ 解析与 B11 早返回**之前**放行：放行晚一步，阶段 3 的模型面收敛会把自家
       // 转发当成模型直呼误拒（RECON 反例 9）。集合判定即全部裁决，工具级禁用已在 dispatch

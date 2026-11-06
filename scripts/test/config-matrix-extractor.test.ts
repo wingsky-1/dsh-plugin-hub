@@ -199,27 +199,7 @@ test("diffKeys 缺/多键", () => {
   assert.deepEqual(d.extra, ["z"]);
 });
 
-// README 配置键提取（量级 #12：lan-proxy 表 + notifier JSON + 合并键 + 噪音免疫）
-test("README lan-proxy 配置表键提取（含合并键、排除非键 token）", () => {
-  const readme = `## 配置
-
-| 键 | 默认 | 说明 |
-|---|---|---|
-| \`enabled\` | \`true\` | 总开关 |
-| \`tlsCertFile\` / \`tlsKeyFile\` | 无 | 证书 |
-| \`wsCompressPaths\` | \`/api/remote.mux\` | 白名单（见 \`GET /health\`） |
-| \`httpCompressLevel\` | \`1\` | 档位 |
-`;
-  const { keys } = extractReadmeConfigKeys(readme, "lan-proxy");
-  assert.deepEqual(keys, [
-    "enabled",
-    "tlsCertFile",
-    "tlsKeyFile",
-    "wsCompressPaths",
-    "httpCompressLevel",
-  ]);
-});
-
+// README 配置键提取（量级 #12：notifier JSON 样例）
 test("README notifier JSON 样例键提取（仅顶层键）", () => {
   const readme = `## 配置
 

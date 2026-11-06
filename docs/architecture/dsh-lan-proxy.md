@@ -1,11 +1,16 @@
 # dsh-lan-proxy 架构与运行机制（TOGAF 4A 四视图）
 
+> **历史归档**：本文描述退役前的 `@wingsky-1/dsh-lan-proxy` 实现，不描述当前
+> DSH `0.2.2-rc.1` 能力，也不承诺 native LAN 兼容或安全。用户迁移见
+> [lan-proxy 退役迁移](../migrations/dsh-lan-proxy.md)；旧版重叠评估见
+> [历史评估](dsh-lan-proxy-official-access-assessment.md)。
+
 > 包：`@wingsky-1/dsh-lan-proxy` · 源码：`packages/dsh-lan-proxy/` · 版本：0.2.4
 > 功能一句话：**局域网访问 dsh web UI**——在 `0.0.0.0:<port>` 监听，把 HTTP/HTTPS 与
 > WebSocket/wss 转发到回环 web 服务器（默认 `127.0.0.1:3080`），并附带 DNS 重绑定防护、
 > HTTPS 并存、WS 压缩桥接、HTTP 响应压缩与 launch-token 自动注入。
 >
-> 快速上手（安装 / 配置键 / 验证命令）见 [包 README](../../packages/dsh-lan-proxy/README.md)；本文讲**原理与运行机制**。
+> 包 README 已随退役从当前源码树移除；本文只讲退役前的原理与运行机制。
 
 ---
 
@@ -43,7 +48,7 @@
                                (Node 进程内)                 (127.0.0.1:3080)
 ```
 
-原单图 `lan-proxy-architecture.{html,svg}` 保留为历史图源，当前结构以本页四视图为准。
+原单图 `lan-proxy-architecture.{html,svg}` 保留为历史图源，退役前结构以本页四视图为准。
 
 关键设计取舍：
 
@@ -204,7 +209,7 @@ sequenceDiagram
   Brotli 同时生效；`httpCompressEnabled:false` 一键关闭，装配默认档位为 1。
 - 上游已带 `Content-Encoding` 时让位，不会二次压缩；不能承诺浏览器总能获得 Brotli。
   例如上游先协商了 gzip，本层就直接保留它（证据：包 AGENTS 与
-  [官方 LAN 重叠评估](../../packages/dsh-lan-proxy/docs/official-lan-access-overlap-assessment.md)）。
+  [官方 LAN 重叠评估](dsh-lan-proxy-official-access-assessment.md)）。
 
 #### 2.3.5 injectToken 自动注入（issue #380）
 
@@ -371,7 +376,8 @@ true、`ownsHostCompat` 默认 false）与 `FILE_CONFIG_VALIDATORS`（`:225`）�
 | HTTPS 私钥 | `server/tls/impl/index.ts` | 自签名私钥落盘 0600；用户证书文件成对校验 |
 | injectToken | `server/proxy/impl/proxy.ts#withLaunchToken` / `#isTokenMintCandidate` | 仅「GET / 且无 token」注入；有 cookie 首次不注入；仅上游 401 时带 token 重放一次 |
 
-> 全量安全语义（含跨站残余面分析、health 元数据可见性等）见包 README「安全模型」节。
+> 全量安全语义（含跨站残余面分析、health 元数据可见性等）见退役前的包 README；
+> 当前 native LAN 边界见 [lan-proxy 退役迁移](../migrations/dsh-lan-proxy.md)。
 
 ---
 

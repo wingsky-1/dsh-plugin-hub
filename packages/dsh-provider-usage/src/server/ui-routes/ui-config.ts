@@ -20,7 +20,12 @@ export async function handleUiConfig(
   res: ServerResponse,
   context: UiRoutesContext,
 ): Promise<void> {
-  if (!guardLoopbackMethod(req, res, ["GET", "POST"])) return;
+  if (
+    !guardLoopbackMethod(req, res, ["GET", "POST"], {
+      remoteAdmission: context.remoteAdmission,
+    })
+  )
+    return;
   const { statsService, uiConfig, broadcastUiConfigChanged } = context;
 
   if (req.method === "GET") {

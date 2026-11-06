@@ -102,12 +102,13 @@ Git Worktrees 能力：`create_worktree` 新建或 `working_directory({ cd: ... 
   原 issue 开 P0 跟踪，**不允许以「环境抖动」结案**；同一判词 30 天内第二次即熔断（`blocked-human`）。
 - 散文段数 `verify:prose-counts`（#767 P6）：`gauntlet.config.json` 里 config/scope 类散文字段的段清单/段数必须与 `mutation-topology.json` 的 segments 事实源一致（集合比对，顺序无关）；失配判红（exit 1），形态未知或事实源缺失 fail-closed（exit 2，禁止合并）。本行不写段数——段数只活在拓扑里，散文只许复述。
 - 新增 `homedir()` / `process.env.HOME` / `untildify()` 调用**没有豁免通道**：
-  一律改走 [`shared/dsh-home.js`](shared/dsh-home.js) 的 `dshHome()` 接缝。
+  一律改走 [`shared/dsh-home.js`](shared/dsh-home.ts) 的 `dshHome()` 接缝。
 
 ## 测试纪律
 
 - **离线 + 断言全覆盖**：smoke 全部无网络、无真实凭据，本地可离线跑；新功能 / 修复必须
-  带 smoke 断言（含路由 403/405 围栏用例与 client 契约断言）。
+  带 smoke 断言：loopback 快路径、非回环官方 `requestRejection` 的
+  401/403/undefined/fail-closed、方法错 405，以及非回环长流的 admitted Peer 生命周期。
 - **产物零污染**：测试落盘必须进 `mkdtempSync` 生成的隔离目录，严禁在仓库内留下
   运行时产物（[`.gitignore`](.gitignore) 已兜底，但仍属红线）。
 - 改完自查：`git status --porcelain` 只允许出现**预期的产物路径**——你本次要提交的文件；
@@ -121,7 +122,8 @@ Git Worktrees 能力：`create_worktree` 新建或 `working_directory({ cd: ... 
 - **发布物自包含**：第三方依赖一律构建期由 esbuild 内联，不以运行时 npm 依赖分发；内联
   = 分发副本，故 license 由构建链归集到 `lib/THIRD-PARTY-LICENSES`，`pack:check` 断言覆盖。
 - **客户端是干净模块**：只 `export function apply(ctx)` + `export const inject`，样式独立
-  `src/client/style.css`，路由强制 loopback 围栏，patch id 用 `dsh-<name>`；细则见
+  `src/client/style.css`，路由使用 loopback 快路径与官方身份准入；非回环 SSE 还须绑定
+  admitted Peer 生命周期，patch id 用 `dsh-<name>`；细则见
   [DEVELOPMENT.md](docs/DEVELOPMENT.md)（[§1](docs/DEVELOPMENT.md#user-content-1-宿主端srcindexts规范) / [§2](docs/DEVELOPMENT.md#user-content-2-客户端规范) / [§3](docs/DEVELOPMENT.md#user-content-3-CSS规范)）。
 - **命名**：新包一律 `dsh-` 前缀，npm 包名 `@wingsky-1/dsh-*`，聚合包 `dsh-plugins-all`。
 - **安全语义**：涉及密钥 / 凭据 / 远程执行 / 令牌的改动，同步更新包 README 的

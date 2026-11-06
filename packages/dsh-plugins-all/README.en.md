@@ -58,14 +58,22 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 |---|---|
 | `@wingsky-1/dsh-notifier` | Task-event notification center (6 event kinds; browser + system toast dual channels + Bark/Webhook push channels) |
 | `@wingsky-1/dsh-provider-usage` | Multi-provider usage capsule (v2 adapter framework: DeepSeek official and OpenCode Go built in, plug in any data source with your own mjs) |
-| `@wingsky-1/dsh-lan-proxy` | Access dsh web UI over the LAN (HTTP/HTTPS/WS forwarding + TLS; Brotli/gzip + WebSocket dual compression, WS half-open probing, launch-token auto-injection) |
 | `@wingsky-1/dsh-mcp-manager` | MCP server manager (stdio/HTTP; per-working-directory project/global config tiers, all servers collapsed into 4 atomic tools via the middleware) |
 | `@wingsky-1/dsh-verify-isolated` | Isolated-verification skill for plugin development (four-way isolation: DSH_HOME / profile / port / browser instance + bundled browser driver) |
 
-> `@wingsky-1/dsh-gzip` is retired: HTTP response compression has been merged into
-> dsh-lan-proxy and no longer ships with the bundle. Users who installed dsh-gzip
-> separately should run
-> `dsh plugin --profile web remove @wingsky-1/dsh-gzip` to uninstall after upgrading.
+> `@wingsky-1/dsh-gzip` is retired: HTTP response compression was first merged into
+> dsh-lan-proxy and is now covered by the official `compression: gzip` config surface,
+> so it no longer ships with the bundle. Users who installed dsh-gzip separately should
+> run `dsh plugin --profile web remove @wingsky-1/dsh-gzip` to uninstall after upgrading.
+>
+> `@wingsky-1/dsh-lan-proxy` is retired (#1159) and no longer ships with the bundle. DSH
+> `0.2.2-rc.1` provides a concrete LAN bind, TLS, Host/Origin and token/session identity
+> admission, but the old proxy rewriting, Brotli, WS bridge/keep-alive and local CA
+> management have no equivalence promise. Short requests and long streams now depend on
+> official `requestRejection` identity admission and an admitted Peer lifecycle respectively;
+> do not treat every plugin as LAN-ready before isolated verification. See the
+> [migration guide](../../docs/migrations/dsh-lan-proxy.md). Users who installed it should run
+> `dsh plugin --profile web remove @wingsky-1/dsh-lan-proxy` to uninstall.
 >
 > `@wingsky-1/dsh-idle-archive` (idle session reminder & archiving) and
 > `@wingsky-1/dsh-subagent-model-inherit` (subagent model inheritance) have both been
@@ -104,8 +112,10 @@ dsh plugin --profile web add @wingsky-1/dsh-notifier
 
 ## Security notes
 
-- `lan-proxy` listens on `0.0.0.0:<port>` and serves HTTPS; read its README security
-  notes before use.
 - `mcp-manager` spawns MCP server subprocesses (stdio) and executes their commands;
   only configure trusted servers.
 - `notifier` pops system notifications on Windows via PowerShell WinRT.
+
+The bundle no longer contains a LAN forwarder. Native DSH short-request identity checks and
+long-stream peer lifecycles still require per-plugin verification; TLS alone does not grant a
+plugin API access.

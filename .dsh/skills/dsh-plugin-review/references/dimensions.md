@@ -50,8 +50,11 @@
 ## D. 多端适配（插件带 UI/通知时）
 
 **本项目硬约束**（必带入 prompt）：
-- DSH 部署在 Linux 服务器，经**局域网 HTTP** 被 Windows / iPad / iOS 手机三种形态
-  访问；另有本机 localhost 桌面与隧道（ssh -L / lan-proxy https）形态。
+- DSH 部署在 Linux 服务器，可能经**原生 HTTPS 局域网入口**被 Windows / iPad / iOS
+  手机三种形态访问；另有本机 localhost 桌面与隧道形态。插件 API 保留 loopback 快路径，
+  非回环短请求须经官方 `requestRejection` 验证才可准入；SSE 等长流还须经
+  `connection.admit` 保留 PeerScope 并绑定释放生命周期。LAN 可用性仍须逐插件隔离验证，
+  TLS 本身不等于认证或放行。
 - 界面必须：响应式（320-414px 窄屏）、触控友好（≥44px 目标、无鼠标拖拽）、
   浅色/暗色双主题（`--dsw-alias-*` 变量 + 浅色回退，禁硬编码单色）。
 

@@ -113,6 +113,38 @@ function registerAdmissionCases() {
     expect(record[0][0].mediaType).toBe("image/png");
     expect(Buffer.from(record[0][0].data).toString("base64")).toBe(PNG);
   });
+
+  it("官方 projectContent 已物化且本包预检通过 → 直接复用，不再 saveImages/resolveModelInfo", async () => {
+    const projected: ModelContentBlock[] = [
+      { type: "image", attachment: { id: "official-att-1" } },
+      { type: "text", text: "官方文本投影" },
+    ];
+    let saves = 0;
+    let routeResolutions = 0;
+    const out = await projectImageAdmission(
+      request({
+        content: [{ type: "image", mimeType: "image/png", data: PNG }],
+        projectedContent: projected,
+        faces: {
+          attachments: () => ({
+            saveImages: async () => {
+              saves += 1;
+              return [{ id: "aplus-att-1" }];
+            },
+          }),
+          models: () => ({
+            resolveModelInfo: async () => {
+              routeResolutions += 1;
+              return modelInfo(["text", "image"]);
+            },
+          }),
+        },
+      }),
+    );
+    expect(out).toEqual(projected);
+    expect(saves).toBe(0);
+    expect(routeResolutions).toBe(0);
+  });
 }
 
 function registerAdmissionDegradeCases() {
@@ -356,6 +388,29 @@ function registerAdmissionLimitCases() {
     );
     expect(out!.length).toBe(11);
     expect(textAt(out, 0)).toContain("too many images");
+    expect(saved).toBe(0);
+  });
+
+  it("官方已物化内容不能绕过本包 count/byte 预检", async () => {
+    let saved = 0;
+    const big = Buffer.alloc(8 * 1024 * 1024 + 1).toString("base64");
+    const out = await projectImageAdmission(
+      request({
+        content: [{ type: "image", mimeType: "image/png", data: big }],
+        projectedContent: [{ type: "image", attachment: { id: "official-too-large" } }],
+        faces: {
+          attachments: () => ({
+            saveImages: async () => {
+              saved += 1;
+              return [];
+            },
+          }),
+          models: () => IMAGE_MODEL,
+        },
+      }),
+    );
+    expect(textAt(out, 0)).toContain("exceeds 8 MiB");
+    expect(out?.some((block) => block.type === "image")).toBe(false);
     expect(saved).toBe(0);
   });
 }

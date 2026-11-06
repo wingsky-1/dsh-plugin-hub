@@ -150,7 +150,7 @@ test("期望集合派生：dsh-/shared- 前缀剥离 + seg=0 单配置形态", (
   assert.deepEqual(expectedBaselineFiles(["README.md", null]), [], "非 .json 条目不得进期望集合");
 });
 
-test("期望集合与真实仓库一致：stryker.conf.d/*.json 一条不落（45 段）", () => {
+test("期望集合与真实仓库一致：stryker.conf.d/*.json 一条不落（36 段）", () => {
   const confNames = readdirSync(join(ROOT, "stryker.conf.d")).filter((f) => f.endsWith(".json"));
   const expected = expectedBaselineFiles(confNames);
   assert.equal(expected.length, confNames.length, "每个段配置都应对应一个基线文件");
@@ -166,9 +166,10 @@ test("期望集合与真实仓库一致：stryker.conf.d/*.json 一条不落（4
   // #1012 Phase 5 P2 接入 root shared settings-namespace 真实夜间段 51 → 52；
   // #1074 接入 root shared client 段（shared/client 直连 .ts 源判据）52 → 53；
   // #1015 T1 原语层上提 shared/client/ui，dsh-provider-usage 新增 ui-primitives 段 53 → 54；
-  // 本轮退役两个包（stryker.conf.d 实测共九段）后为 45），
+  // 本轮退役两个包（stryker.conf.d 实测共九段）后为 45；
+  // dsh-lan-proxy 退役删九段 45 → 36）,
   // 否则新增段静默漏进归档期望集合也无人察觉。
-  assert.equal(expected.length, 45, `段数应为 45，实际 ${expected.length}`);
+  assert.equal(expected.length, 36, `段数应为 36，实际 ${expected.length}`);
   for (const f of expected) assert.match(f, BASELINE_FILE_RE, `文件名应匹配归档形态：${f}`);
 });
 

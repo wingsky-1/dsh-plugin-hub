@@ -59,7 +59,7 @@ export const zh = {
   kTest: "测试",
   // 403 引导（accessHint）
   lanAccessHint:
-    "（若为局域网直连访问，通知服务仅允许回环调用而被拒：请用 dsh-lan-proxy 的 https://<局域网IP>:3443 或 ssh -L 3080:127.0.0.1:3080 隧道访问后刷新）",
+    "（若为局域网直连访问：请先通过 dsh web 打印的登录地址建立官方会话，并确认 Host/Origin 与当前地址一致；仍无法访问时可用 SSH 端口转发到回环地址）",
   // 设置卡
   settingsLoading: "通知：加载中…",
   settingsUnavailable: "设置服务不可用",
@@ -108,14 +108,14 @@ export const zh = {
   settingsSvcDown:
     "设置服务不可用：当前无法保存配置（settings 服务未挂载）。插件通知功能不受影响，但更改将被拒绝。",
   httpDegraded:
-    "当前为局域网 HTTP 访问（非安全上下文），浏览器禁止系统级弹窗，已启用「页面内横幅 + 提示音 + 标题提醒」降级通道。如需系统弹窗，请改用 dsh-lan-proxy 的 https://<局域网IP>:3443 或 localhost 隧道访问（如 ssh -L 3080:127.0.0.1:3080）后刷新页面。",
+    "当前为局域网 HTTP 访问（非安全上下文），浏览器禁止系统级弹窗，已启用「页面内横幅 + 提示音 + 标题提醒」降级通道。如需系统弹窗，请改用提供有效证书的原生 HTTPS 地址，并在设备上信任该证书后刷新页面。",
   permGranted: "浏览器通知权限：已授权 ✓",
   permDenied:
     "浏览器通知权限：已拒绝。未授权时不会弹浏览器系统通知；页面隐藏时只更新标题，页面可见且通知策略允许时显示页内横幅。请在浏览器站点设置中允许本页通知。",
   permDefault:
     "浏览器通知权限：未授权。未授权时不会弹浏览器系统通知；页面隐藏时只更新标题，页面可见且通知策略允许时显示页内横幅。可点击下方按钮请求授权。",
   iosUnsupported:
-    "当前设备不支持系统级通知（如 iOS Safari 普通标签页无 Web Notifications）。可用通道：页面可见时的横幅 + 提示音（需保持页面打开），或经 dsh-lan-proxy 的 https://<局域网IP>:3443 访问并「添加到主屏幕」后获得 PWA 级通知能力。",
+    "当前设备不支持系统级通知（如 iOS Safari 普通标签页无 Web Notifications）。可用通道：页面可见时的横幅 + 提示音（需保持页面打开）；如需系统通知，请改用提供有效证书的原生 HTTPS 地址，信任证书后将页面添加到主屏幕。",
   // 动作区
   clearConfirm: "确认清理记录？",
   clearLabel: "清理记录",
@@ -388,7 +388,7 @@ export const en: Record<NotifierLocaleKey, string> = {
   kTurnEnd: "Turn completed",
   kTest: "Test",
   lanAccessHint:
-    " (If you are on a LAN connection: the notify service only accepts loopback calls — open via dsh-lan-proxy https://<LAN-IP>:3443 or an ssh -L 3080:127.0.0.1:3080 tunnel, then refresh)",
+    " (If you are on a LAN connection: first establish an official session through the login URL printed by dsh web, and make sure Host/Origin match the current address; an SSH tunnel to the loopback address remains a fallback)",
   settingsLoading: "Notifier: loading…",
   settingsUnavailable: "Settings service unavailable",
   loadFail: "Failed to load settings: {msg}{hint}",
@@ -430,14 +430,14 @@ export const en: Record<NotifierLocaleKey, string> = {
   settingsSvcDown:
     "Settings service unavailable: cannot save configuration (settings service not mounted). Plugin notifications are unaffected, but changes will be rejected.",
   httpDegraded:
-    "You are on a LAN HTTP connection (insecure context) — the browser blocks system notifications; in-page banner + sound + title reminders are active instead. For system notifications, use dsh-lan-proxy https://<LAN-IP>:3443 or a localhost tunnel (e.g. ssh -L 3080:127.0.0.1:3080), then refresh.",
+    "You are on a LAN HTTP connection (insecure context) — the browser blocks system notifications; in-page banner + sound + title reminders are active instead. For system notifications, switch to a native HTTPS address with a valid certificate, trust it on this device, then refresh the page.",
   permGranted: "Browser notification permission: granted ✓",
   permDenied:
     "Browser notification permission: denied. Without permission, browser system notifications cannot appear; while the page is hidden, only the title is updated. When the page is visible, an in-page banner appears only if the notification policy allows it. Allow notifications for this site in the browser site settings.",
   permDefault:
     "Browser notification permission: not granted. Without permission, browser system notifications cannot appear; while the page is hidden, only the title is updated. When the page is visible, an in-page banner appears only if the notification policy allows it. Click the button below to request permission.",
   iosUnsupported:
-    'This device does not support system notifications (e.g. iOS Safari in a normal tab). Available channels: in-page banner + sound while the page is open, or PWA-grade notifications via dsh-lan-proxy https://<LAN-IP>:3443 with "Add to Home Screen".',
+    "This device does not support system notifications (e.g. iOS Safari in a normal tab). Available channels: in-page banner + sound while the page is open. For system notifications, switch to a native HTTPS address with a valid certificate, trust it on this device, then add the page to Home Screen.",
   clearConfirm: "Clear history?",
   clearLabel: "Clear history",
   requestPerm: "Request permission",

@@ -378,11 +378,17 @@ test("真实仓库锚：收敛后 exit 0", () => {
   assert.equal(r.status, 0, String(r.stderr).slice(0, 800));
 });
 
-test("真实仓库锚：观察表含 triple 与镜像对", () => {
+test("真实仓库锚：观察表含上游非 dsh 分组与 provider 镜像对", () => {
   const r = spawnSync(process.execPath, [GATE, "--observe"], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0);
   const out = String(r.stdout);
-  assert.ok(out.includes("upstream-triple") && out.includes("/api/remote.mux"));
+  // 上游（非 /api/dsh-）值只进观察表：存续真实观测面为 upstream-single 分组，
+  // 以及 provider 与 notifier 的 mirror-pass 镜像对与 ?? 回退标注。lan 退役前本锚断言
+  // upstream-triple + /api/remote.mux，该 triple 的唯一宿主是已删除的 dsh-lan-proxy
+  // （见 verify-host-seams.mjs R4 注释），真实树上已无此形态；triple 的 disposition
+  // 覆盖由本文件「锚定 R4：分组 disposition」的隔离 fixture 逐条钉死（正反例均含），
+  // 不依赖真实仓库恰有 triple，故此处不再要求真实树上出现 triple。
+  assert.ok(out.includes("upstream-single"));
   assert.ok(out.includes("fallback"));
   assert.ok(out.includes("mirror-pass") && out.includes("dsh-provider-usage"));
 });

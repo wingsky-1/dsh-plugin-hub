@@ -1,10 +1,9 @@
 /**
  * dsh-mcp-manager — HTTP 路由装配层（依赖 import 模块与仓库共享层）。
  *
- * /api/dsh-mcp/* 路由（loopback-only）供 web GUI 分级展示、快速接入、
- * 导入 mcpServers JSON；events 为 SSE 状态推送通道。
- * 例外：/api/dsh-mcp/config 是只读 UI 配置接口，允许非 loopback 访问，
- * 便于远程页面读取 position/offset 等非敏感展示配置。
+ * /api/dsh-mcp/* 路由供 web GUI 分级展示、快速接入、导入 mcpServers JSON；
+ * events 为 SSE 状态推送通道。loopback 保持快路径；非回环统一接官方 connection
+ * admission，不复制认证算法。
  * 由 lib/index.js 组合根 re-export（ROUTES / makeRoutes）。
  *
  * #592 阶段二 Batch A 消峰：各端点 handler 已拆离至 routes-controllers.ts
@@ -15,7 +14,13 @@
 
 // 辅助函数统一来自仓库共享层（loopback 围栏 / writeJson / readJsonBody / sseData）。
 
-import { writeJson, sseData, guardLoopbackMethod } from "../../../../../shared/host-utils.js";
+import {
+  admitLongLivedRequest,
+  bindPeerLifecycle,
+  guardLoopbackMethod,
+  sseData,
+  writeJson,
+} from "../../../../../shared/host-utils.js";
 import { createSseHub } from "../../../../../shared/sse-hub.js";
 import type { SseHub } from "../../../../../shared/sse-hub.js";
 import { ROUTES, SSE_FRAMES, SERVER_STATES } from "../../shared/interface.ts";
@@ -33,6 +38,7 @@ import {
   buildReconnectRoute,
   buildImportJsonRoute,
   buildToolDisableRoute,
+  type RouteAccess,
   type RouteHelpers,
 } from "./routes-controllers.ts";
 import { queryParam } from "./routes-helpers.ts";
@@ -48,6 +54,15 @@ export { queryParam };
 
 /** 组装 /api/dsh-mcp/* 路由。cwd 参数仅用于兼容旧调用（不再被路由使用）。 */
 export function makeRoutes(manager: RoutesManager, _cwd = process.cwd()): WebRoute[] {
+  return makeRoutesWithAccess(manager, _cwd);
+}
+
+/** API 域内部入口：组合根注入官方动态 admission，不进入包根公开 ABI。 */
+export function makeRoutesWithAccess(
+  manager: RoutesManager,
+  _cwd = process.cwd(),
+  access: RouteAccess = {},
+): WebRoute[] {
   /** 统一错误边界（#770-A2）：全部控制器经 helpers.handleError 收口，文案先经
    * manager.redactError 脱敏（C 快照：全局 store + 全部 projectStores 缓存 +
    * runtimeRegistry，含 disabled/unconnected；400 校验类错误无秘密，脱敏恒等无害）。
@@ -82,7 +97,12 @@ export function makeRoutes(manager: RoutesManager, _cwd = process.cwd()): WebRou
     const cwdParam = queryParam(url, "cwd");
     if (cwdParam !== undefined && cwdParam !== "") await manager.setSession(cwdParam);
   };
-  const helpers: RouteHelpers = { handleError, scopeParam, maybeSession };
+  const helpers: RouteHelpers = {
+    handleError,
+    scopeParam,
+    maybeSession,
+    remoteAdmission: access.remoteAdmission,
+  };
 
   return [
     buildConfigRoute(manager, helpers),
@@ -156,11 +176,58 @@ export function makeEventsRoute(
   manager: RoutesManager,
   options?: { heartbeatMs?: number },
 ): WebRoute {
+  return makeEventsRouteWithAccess(manager, options);
+}
+
+/** API 域内部入口：保留公开 heartbeat 参数并追加官方 peer admission。 */
+export function makeEventsRouteWithAccess(
+  manager: RoutesManager,
+  options?: {
+    readonly heartbeatMs?: number;
+    readonly remotePeerAdmission?: NonNullable<
+      Parameters<typeof admitLongLivedRequest>[1]
+    >["remotePeerAdmission"];
+  },
+): WebRoute {
   return {
     kind: "exact",
     path: ROUTES.events,
     handler: (req, res) => {
-      if (!guardLoopbackMethod(req, res, ["GET"])) return;
+      const admission = admitLongLivedRequest(req, {
+        remotePeerAdmission: options?.remotePeerAdmission,
+      });
+      if ("rejection" in admission) {
+        writeJson(res, admission.rejection, {
+          error: admission.rejection === 401 ? "unauthorized" : "forbidden: loopback-only",
+        });
+        return;
+      }
+      if (req.method !== "GET") {
+        writeJson(res, 405, { error: `method not allowed: ${req.method}` });
+        return;
+      }
+
+      let lifecycleSettled = false;
+      let disposePeer: (() => void) | undefined;
+      const closeForPeer = () => {
+        if (lifecycleSettled) return;
+        lifecycleSettled = true;
+        disposePeer = undefined;
+        hub.unregister(res);
+        if (!res.writableEnded && !res.destroyed) res.destroy();
+      };
+      if (admission.peer !== undefined) {
+        try {
+          disposePeer = bindPeerLifecycle(
+            admission.peer,
+            closeForPeer,
+            "dsh-mcp-manager: raw SSE bound to admitted Peer",
+          );
+        } catch {
+          writeJson(res, 403, { error: "forbidden: peer-unavailable" });
+          return;
+        }
+      }
       // 惰性创建共享 hub（连接表 + 心跳 + stalled/maxAge 回收）；health 路由若在
       // events 之前注册会先建 hub，故 hub 创建不含业务副作用。
       const hub = (manager.sseHub ??= createSseHub({
@@ -174,17 +241,39 @@ export function makeEventsRoute(
       res.write(": connected\n\n");
       res.write(sseData({ type: SSE_FRAMES.summary } satisfies SseFramePayload));
       hub.register(res);
+      res.on("close", () => {
+        // hub 的 close listener 先出表；这里再做幂等清理并释放官方 Peer effect。
+        hub.unregister(res);
+        if (lifecycleSettled) return;
+        lifecycleSettled = true;
+        const dispose = disposePeer;
+        disposePeer = undefined;
+        dispose?.();
+      });
     },
   };
 }
 
 /** 健康检查：插件是否加载、服务器/连接/工具状态（诊断"插件没生效"的标准入口）。 */
 export function makeHealthRoute(manager: RoutesManager): WebRoute {
+  return makeHealthRouteWithAccess(manager);
+}
+
+/** API 域内部入口：健康检查同样接官方动态 admission。 */
+export function makeHealthRouteWithAccess(
+  manager: RoutesManager,
+  access: RouteAccess = {},
+): WebRoute {
   return {
     kind: "exact",
     path: ROUTES.health,
     handler: (req, res) => {
-      if (!guardLoopbackMethod(req, res, ["GET"])) return;
+      if (
+        !guardLoopbackMethod(req, res, ["GET"], {
+          remoteAdmission: access.remoteAdmission,
+        })
+      )
+        return;
       // 三计数按连接池**单元表**聚合（#767 笔 1a 单池）：直连账本已退役，池是唯一连接
       // 路径。顶层键集逐字不变（外部形状守恒）。
       // 状态判据走读时刷新的投影（statusOf）：中间层 entry.status 只在装载窗口结算时写入，

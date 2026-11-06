@@ -283,7 +283,7 @@ describe("4. evaluateProbe 四态 fixture", () => {
   });
 
   it("真实路由采样形状（status=cached、adapterName=*-builtin、带 capsuleHtml）仍判 fail exit 1", () => {
-    // 本 fixture 取自 0.2.1-rc.2 隔离实例的真实 /stats 响应（capsuleHtml 已截短），
+    // 本 fixture 取自 0.2.1-rc.2 隔离实例的历史 /stats 响应（capsuleHtml 已截短），
     // 只用于锁解析兼容性；不含任何凭据。
     const realStats = {
       plugin: "dsh-provider-usage",

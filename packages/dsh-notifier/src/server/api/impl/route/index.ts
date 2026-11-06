@@ -3,10 +3,9 @@
  * 只给资源伺服路由）、方法围栏（方法不在表里给 405 而不是 404）、异常收口（漏出去的异常留下的不是错误页，是一个挂住的连接）。
  */
 import type { ServerResponse } from "node:http";
-import { isLoopbackRequest } from "../../../../../../../shared/host-utils.js";
 import { REFUSAL_CODES } from "../../../../shared/interface.ts";
 import type { RefusalCode } from "../../../../shared/interface.ts";
-import type { LoggerPort, RegisterRoute } from "../../deps.ts";
+import type { LoggerPort, RegisterRoute, RemoteAccessPort } from "../../deps.ts";
 import type { Endpoint, HttpMethod } from "./type.ts";
 
 /**
@@ -61,7 +60,7 @@ export function sendFailure(
  * 不再依赖「服务端必须永远保持 `error` 为裸字符串」这条隐式契约；旧客户端读不到它们，行为不变。
  * 因此三者共存，而不是把 `error` 升级成对象——后者会让新旧客户端都退到兜底路径上去。
  * `allow` 不进 body：它已是 405 的标准头（同一份事实两处声明，就有两处先腐烂）。 */
-function sendRefused(
+export function sendRefused(
   res: ServerResponse,
   status: number,
   code: RefusalCode,
@@ -69,6 +68,16 @@ function sendRefused(
   headers: Record<string, string> = {},
 ): void {
   sendJson(res, status, { error: reason, code, status }, headers);
+}
+
+/** 认证围栏 401/403 的结构化拒绝出口；调用方不再各自携带 refusal code 映射。 */
+export function sendRouteRefusal(res: ServerResponse, rejection: 401 | 403): void {
+  sendRefused(
+    res,
+    rejection,
+    rejection === 401 ? REFUSAL_CODES.UNAUTHORIZED : REFUSAL_CODES.FORBIDDEN_LOOPBACK,
+    rejection === 401 ? "unauthorized" : "forbidden: loopback-only",
+  );
 }
 
 /**
@@ -90,10 +99,11 @@ export function registerEndpoints(
   register: RegisterRoute,
   endpoints: Endpoint[],
   logger: LoggerPort,
+  remote: RemoteAccessPort,
 ): Array<() => void> {
   const disposers: Array<() => void> = [];
   try {
-    registerAll(register, endpoints, logger, disposers);
+    registerAll(register, endpoints, logger, disposers, remote);
   } catch (error) {
     // 整单回滚：已挂的逐个摘除、不留「已注册」的假记忆。清理路径不盖首因，也不上报。
     for (const dispose of disposers.splice(0).reverse()) {
@@ -114,6 +124,7 @@ function registerAll(
   endpoints: Endpoint[],
   logger: LoggerPort,
   disposers: Array<() => void>,
+  remote: RemoteAccessPort,
 ): void {
   for (const endpoint of endpoints) {
     disposers.push(
@@ -121,8 +132,9 @@ function registerAll(
         kind: "exact",
         path: endpoint.path,
         handler: (req, res) => {
-          if (!isLoopbackRequest(req)) {
-            sendRefused(res, 403, REFUSAL_CODES.FORBIDDEN_LOOPBACK, "forbidden: loopback-only");
+          const rejection = remote.fence(req);
+          if (rejection !== undefined) {
+            sendRouteRefusal(res, rejection);
             return;
           }
           const handle = endpoint.methods[(req.method ?? "") as HttpMethod];

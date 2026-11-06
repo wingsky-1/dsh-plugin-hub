@@ -10,6 +10,7 @@ import {
   SCRIPTS_DIR,
   parseFrontmatter,
   scriptFile,
+  scriptSupportFiles,
 } from "./smoke-support";
 
 export function resourcesSkillContract() {
@@ -57,7 +58,7 @@ export function distributedScriptsContract() {
     });
 
     it("共享基础工具 lib/verify-core.mjs 随 skill 目录分发", () => {
-      expect(existsSync(join(SCRIPTS_DIR, "lib", "verify-core.mjs"))).toBeTruthy();
+      expect(scriptSupportFiles.every((path) => existsSync(path))).toBeTruthy();
     });
   });
 
@@ -163,7 +164,7 @@ export function skillDisclosureContract() {
 
     it("SKILL.md 含 PATH dsh 版本锚定用法", () => {
       expect(skillRaw.includes("PATH")).toBeTruthy();
-      expect(skillRaw.includes("0.2.1-rc.2")).toBeTruthy();
+      expect(skillRaw.includes("0.2.2-rc.1")).toBeTruthy();
       expect(skillRaw.includes("--dsh")).toBeFalsy();
     });
 

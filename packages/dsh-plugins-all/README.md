@@ -52,16 +52,22 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 |---|---|
 | `@wingsky-1/dsh-notifier` | 任务事件通知中心（6 类事件；浏览器 + 系统 toast 双通道 + Bark/Webhook 推送频道） |
 | `@wingsky-1/dsh-provider-usage` | 多 provider 用量统计胶囊（v2 适配器框架：内置 DeepSeek 官方与 OpenCode Go，自写 mjs 接入任意数据源） |
-| `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web UI（HTTP/HTTPS/WS 转发 + TLS；Brotli/gzip 与 WebSocket 双压缩 + WS 半开探活 + 启动令牌自动注入） |
 | `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio/HTTP；项目级/全局两级配置，全部服务器经中间层收敛为 4 个原子工具） |
 | `@wingsky-1/dsh-verify-isolated` | 插件开发隔离验证 skill（DSH_HOME / profile / 端口 / 浏览器实例四重隔离 + 自带浏览器驱动） |
 
 <details>
-<summary><b>历史退役说明</b>——dsh-gzip / dsh-idle-archive / dsh-subagent-model-inherit / dsh-codegraph / dsh-mem0 / dsh-web-file-preview（已退役）</summary>
+<summary><b>历史退役说明</b>——dsh-gzip / dsh-lan-proxy / dsh-idle-archive / dsh-subagent-model-inherit / dsh-codegraph / dsh-mem0 / dsh-web-file-preview（已退役）</summary>
 
-`@wingsky-1/dsh-gzip` 已退役：HTTP 响应压缩合并进 dsh-lan-proxy，不再随全家桶
-分发。此前单独安装过 dsh-gzip 的用户升级后请执行
-`dsh plugin --profile web remove @wingsky-1/dsh-gzip` 卸载。
+`@wingsky-1/dsh-gzip` 已退役：HTTP 响应压缩先合并进 dsh-lan-proxy、后由官方
+`compression: gzip` 配置面覆盖，不再随全家桶分发。此前单独安装过 dsh-gzip 的用户
+升级后请执行 `dsh plugin --profile web remove @wingsky-1/dsh-gzip` 卸载。
+
+`@wingsky-1/dsh-lan-proxy` 已退役（#1159），不再随全家桶分发：DSH `0.2.2-rc.1`
+原生入口提供具体 LAN 地址 bind、TLS、Host/Origin 与 token/session 身份准入，但旧包的
+代理层改写、Brotli、WS 桥接/保活和本地 CA 管理没有等价承诺。插件短请求与新增长流现在
+分别依赖官方 `requestRejection` 身份准入和 admitted Peer 生命周期；逐插件隔离验证完成前
+不应视为全部可用。迁移说明见[文档](../../docs/migrations/dsh-lan-proxy.md)。此前安装过的用户请执行
+`dsh plugin --profile web remove @wingsky-1/dsh-lan-proxy` 卸载。
 
 `@wingsky-1/dsh-idle-archive`（会话闲置提醒归档）与
 `@wingsky-1/dsh-subagent-model-inherit`（子 Agent 模型继承）均已**退役**，不再随
@@ -96,6 +102,8 @@ dsh plugin --profile web add @wingsky-1/dsh-notifier
 
 ## 安全提示
 
-- `lan-proxy` 会在 0.0.0.0:<port> 监听端口并提供 HTTPS，使用前阅读其 README 安全说明。
 - `mcp-manager` 会启动 MCP 服务器子进程（stdio）并执行其命令，仅配置可信服务器。
 - `notifier` 在 Windows 通过 PowerShell WinRT 弹系统通知。
+
+聚合包不再包含 LAN 转发器。DSH 原生 LAN/TLS 的短请求身份校验与长流 Peer 生命周期
+仍在逐插件验证；TLS 成功本身不等于插件 API 已获准访问。

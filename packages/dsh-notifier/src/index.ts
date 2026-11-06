@@ -27,6 +27,13 @@ import type { NotifierService } from "./server/sdk/interface.ts";
 import type { LoggerPort, NotificationLocale } from "./server/shared/interface.ts";
 import * as storesApi from "./server/stores/interface.ts";
 import { installUpgrade, releaseUpgrade } from "./server/upgrade/interface.ts";
+import {
+  admitLongLivedRequest,
+  bindPeerLifecycle,
+  liveConnectionAdmission,
+  liveConnectionPeerAdmission,
+  routeFenceRejection,
+} from "../../../shared/host-utils.js";
 import { createDisposerStack, type DisposerStack } from "./shared/interface.ts";
 
 /**
@@ -119,6 +126,8 @@ class FrameBus {
 /** 组合根用到的宿主面：域拿到的是能力，不是上下文。 */
 interface HostPort {
   readonly logger: LoggerPort;
+  /** 官方 connection 的短请求围栏与长连接 Peer 生命周期能力。 */
+  readonly remote: Parameters<typeof apiApi.installApi>[0]["remote"];
   /** 帧总线：帧经它从裁决管线走到浏览器出口。 */
   readonly frames: FrameBus;
   /** 宿主路由注册口：只有组合根够得着 `ctx.webServer`。 */
@@ -153,8 +162,16 @@ function bindHost(ctx: Context): HostPort {
     }
   };
 
+  const remoteAdmission = liveConnectionAdmission(ctx);
+  const remotePeerAdmission = liveConnectionPeerAdmission(ctx);
+
   return {
     logger: ctx.logger,
+    remote: {
+      fence: (req) => routeFenceRejection(req, { remoteAdmission }),
+      admitStream: (req) => admitLongLivedRequest(req, { remotePeerAdmission }),
+      bindPeer: bindPeerLifecycle,
+    },
     frames: new FrameBus(),
     // 依赖已由 `inject` 声明，服务就绪才轮到本插件装配：这里直接取用，没有探测、也没有迟到分支。
     legacySettings: ctx.settings,
@@ -322,6 +339,7 @@ async function assemble(
     register: host.register,
     frames: host.frames,
     logger: host.logger,
+    remote: host.remote,
     config: configApi,
     stores: storesApi,
     pipeline: pipelineApi,

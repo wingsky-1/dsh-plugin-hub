@@ -10,6 +10,12 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Context } from "@deepseek-ai/cordis";
+import type {
+  ToolExecutionInput,
+  ToolExecutionResult,
+  ToolExecutionToken,
+} from "@deepseek-ai/dsh-tools";
+import type { ScheduledToolDispatch, ToolExecutionSource } from "@deepseek-ai/dsh-tools/pipeline";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -324,6 +330,26 @@ export interface FakeToolEntry {
 export interface FakeToolsScript {
   schemas?: FakeToolEntry[];
   execute?: (input: unknown) => unknown | Promise<unknown>;
+  /** 宿主 loader 对 `@deepseek-ai/dsh-tools/pipeline` 的假解析结果。 */
+  pipelineModule?: unknown;
+}
+
+function isToolExecutionError(record: Record<string, unknown>): boolean {
+  const error = record.error;
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof error.message === "string"
+  );
+}
+
+function isToolExecutionResult(value: unknown): value is ToolExecutionResult {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  if (typeof record.isError !== "boolean" || !Array.isArray(record.content)) return false;
+  if (!record.isError) return "value" in value;
+  return isToolExecutionError(record);
 }
 
 export function fakeToolsService(script: FakeToolsScript = {}) {
@@ -331,10 +357,95 @@ export function fakeToolsService(script: FakeToolsScript = {}) {
   const registered: unknown[] = [];
   const disposed: unknown[] = [];
   const executed: unknown[] = [];
+  const pipelineInputs: ToolExecutionInput[] = [];
+  const pipelineSources: Array<ToolExecutionSource | undefined> = [];
+
+  function executable(name: string, scope?: unknown, toolSet?: ToolExecutionInput["toolSet"]) {
+    if (toolSet !== undefined) return toolSet.view(scope).get(name);
+    return (
+      registered.find(
+        (definition): definition is FakeToolEntry =>
+          typeof definition === "object" &&
+          definition !== null &&
+          "name" in definition &&
+          definition.name === name,
+      ) ?? schemas.find((definition) => definition.name === name)
+    );
+  }
+
+  class ToolExecutionPipeline {
+    constructor(
+      _ctx: Context,
+      readonly source: ToolExecutionSource | undefined,
+    ) {}
+
+    async prepare(input: ToolExecutionInput) {
+      pipelineInputs.push(input);
+      pipelineSources.push(this.source);
+      // 与官方 createExecution 同序：source lookup 先于 reject；source 一旦存在就不得回落到
+      // 全局注册表，否则受控私有依赖 fixture 会比真实 pipeline 更宽。
+      const definition =
+        this.source?.get === undefined
+          ? executable(input.name, input.agent, input.toolSet)
+          : this.source.get(input.name, input.agent, input.toolSet);
+      const rejected =
+        definition === undefined
+          ? undefined
+          : this.source?.reject?.(input.name, input.parent !== undefined);
+      const exec = {
+        ...input,
+        rootCallId: input.rootCallId ?? input.callId,
+        token: Symbol("fake-execution") as ToolExecutionToken,
+        deferContext() {},
+        concludeTurn() {},
+      };
+      if (rejected !== undefined) {
+        return {
+          kind: "final-result" as const,
+          exec,
+          result: {
+            isError: true,
+            error: {
+              message: rejected.message,
+              info: { name: "ToolNotFoundError", code: "UNKNOWN_TOOL" },
+            },
+            content: [{ type: "text", text: `Error: ${rejected.message}` }],
+          },
+        };
+      }
+      return { kind: "dispatch" as const, exec };
+    }
+
+    async dispatch(exec: ToolExecutionInput): Promise<ScheduledToolDispatch> {
+      const result = await execute(exec);
+      return { kind: "post-result", result };
+    }
+
+    async complete(
+      _exec: ToolExecutionInput,
+      outcome: ScheduledToolDispatch,
+    ): Promise<ToolExecutionResult> {
+      return outcome.result;
+    }
+  }
+
+  async function execute(input: unknown): Promise<ToolExecutionResult> {
+    executed.push(input);
+    const result = script.execute === undefined ? undefined : await script.execute(input);
+    const normalized = result ?? ({ isError: false, content: [], value: { content: [] } } as const);
+    if (!isToolExecutionResult(normalized)) {
+      throw new Error("fake tools.execute returned a non-ToolExecutionResult value");
+    }
+    return normalized;
+  }
+
   return {
     registered,
     disposed,
     executed,
+    pipelineInputs,
+    pipelineSources,
+    defaultPipelineModule: { ToolExecutionPipeline },
     get entries() {
       return schemas;
     },
@@ -348,10 +459,18 @@ export function fakeToolsService(script: FakeToolsScript = {}) {
     schemas() {
       return schemas;
     },
+    get(name: string) {
+      return registered.find(
+        (definition): definition is FakeToolEntry =>
+          typeof definition === "object" &&
+          definition !== null &&
+          "name" in definition &&
+          definition.name === name,
+      );
+    },
+    executable,
     async execute(input: unknown) {
-      executed.push(input);
-      if (script.execute) return await script.execute(input);
-      return { isError: false, content: [], value: { content: [] } };
+      return await execute(input);
     },
   };
 }

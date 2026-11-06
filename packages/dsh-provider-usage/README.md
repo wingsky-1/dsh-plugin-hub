@@ -235,7 +235,7 @@ dsh-mcp-manager 浮窗的默认位置（`top-right`、距顶 8px、高约 26px�
 > （`DEEPSEEK_API_KEY`，与 llm 层同源）→ 适配器内 `process.env.DEEPSEEK_API_KEY` 自查。
 > 全空时取数报 `no-api-key` 并降级 stale 帧（峰谷徽标仍渲染，胶囊追加最后成功更新时间）。
 
-## 路由（全部 loopback 围栏）
+## 路由（loopback 快路径 + 官方 LAN 认证）
 
 | 路由 | 说明 |
 | --- | --- |
@@ -429,7 +429,12 @@ v1 旧契约已随破坏性变更 #932 删除，仅支持 v2 契约（`fetchData
 - **fail-fast 加载**：适配器缺导出/类型错/name 不合白名单 → 拒绝加载并登记可排障错误
 - **历史数据**：按天分片 JSONL 落盘（`0600` 权限），超龄/超量自动清理；
   原始 data 在落盘前经过序列化校验（不可序列化对象拒收）
-- 所有路由 loopback 围栏（非回环 403 / 方法错 405）；管理端点信息面最小披露
+- 所有路由接受 loopback 快路径；非 loopback 请求必须由官方 `dsh-client-connection`
+  的浏览器/API 会话通过 Host、Origin、cross-site 与凭据校验，未认证保持 401/403，
+  认证通过后才进入方法判定（错方法 405）。非 loopback SSE 还会保留官方
+  `connection.admit` 返回的 admitted PeerScope；Peer 释放或 connection 卸载时立即从
+  连接表删除并关闭，未认证或生命周期绑定失败不得写 200 或注册流。loopback SSE
+  继续走既有插件生命周期。管理端点信息面最小披露
   （用户文件只显示 basename）；请求频率受控（轮询 ≤1 次/60s + 预热 ≤1 次/5min + 60s TTL 缓存）
 
 ## 验证

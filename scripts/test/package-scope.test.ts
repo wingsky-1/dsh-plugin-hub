@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 
 import { resolvePackageScope } from "../lib/package-scope.ts";
 
-const KNOWN = ["dsh-notifier", "dsh-lan-proxy", "dsh-plugins-all"];
+const KNOWN = ["dsh-notifier", "dsh-mcp-manager", "dsh-plugins-all"];
 
 test("resolvePackageScope：不带 --packages 即不切片（全仓口径）", () => {
   assert.deepEqual(resolvePackageScope([], KNOWN), { packages: null });
@@ -22,16 +22,16 @@ test("resolvePackageScope：不带 --packages 即不切片（全仓口径）", (
 
 test("resolvePackageScope：逗号/空白/等号三种写法等价，重复项去重", () => {
   assert.deepEqual(
-    resolvePackageScope(["--packages", "dsh-notifier,dsh-lan-proxy"], KNOWN).packages,
-    ["dsh-notifier", "dsh-lan-proxy"],
+    resolvePackageScope(["--packages", "dsh-notifier,dsh-mcp-manager"], KNOWN).packages,
+    ["dsh-notifier", "dsh-mcp-manager"],
   );
-  assert.deepEqual(resolvePackageScope(["--packages=dsh-notifier,dsh-lan-proxy"], KNOWN).packages, [
-    "dsh-notifier",
-    "dsh-lan-proxy",
-  ]);
   assert.deepEqual(
-    resolvePackageScope(["--packages", "dsh-notifier dsh-lan-proxy"], KNOWN).packages,
-    ["dsh-notifier", "dsh-lan-proxy"],
+    resolvePackageScope(["--packages=dsh-notifier,dsh-mcp-manager"], KNOWN).packages,
+    ["dsh-notifier", "dsh-mcp-manager"],
+  );
+  assert.deepEqual(
+    resolvePackageScope(["--packages", "dsh-notifier dsh-mcp-manager"], KNOWN).packages,
+    ["dsh-notifier", "dsh-mcp-manager"],
   );
   assert.deepEqual(
     resolvePackageScope(["--packages", "dsh-notifier,dsh-notifier"], KNOWN).packages,

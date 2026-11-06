@@ -112,9 +112,9 @@ async function eagerFilterFixture() {
 async function directGuardFixture() {
   const { manager } = makeManager(homeDir);
   // guard 回调捕获器：存取两用（ctx.on 侧存入、判据侧按 guard 形状调用），值面保持未知、调用点收窄。
-  const handlers = new Map<string, unknown>();
+  const handlers = new Map<string | symbol, unknown>();
   // 假 ctx 补 on：registerMiddlewareTools 只在 ctx.on 可用时才挂 pre-execute guard。
-  manager.ctx.on = (event, handler) => {
+  manager.ctx.on = (event: string | symbol, handler: unknown) => {
     handlers.set(event, handler);
     return () => handlers.delete(event);
   };

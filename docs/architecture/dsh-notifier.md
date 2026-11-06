@@ -184,7 +184,12 @@ build 为 clean-lib→tsc→scripts/build/bundle-host.ts；esbuild 内联第三�
 
 仓库 `shared/host-utils.js#isLoopbackRequest` 实际检查回环 socket peer、回环 Host、默认拒绝 cross-site，存在 Origin 时 authority 须匹配 Host；不是只看 IP，也不是 HTTPS 即放行。
 
-**经 LAN proxy 不等于一律 403。** 代理走回环上游，改写 Host 与存在的 Origin，保留 sec-fetch-site；合法同源请求可满足 notifier 围栏，直接非回环 peer/Host 则拒绝。HTTPS 主要解决浏览器安全上下文，不替代 API 准入或访问控制；代理扩大可达信任边界（跨包证据：`packages/dsh-lan-proxy/src/server/proxy/impl/proxy.ts#rewriteHeaders`；见 [LAN proxy 架构](dsh-lan-proxy.md)）。
+**退役的 LAN proxy 行为不再是当前入口。** 目标安全模型保留 loopback 快路径；非回环
+请求只有在官方 `ctx.connection.requestRejection(req)` 验证通过（返回 `undefined`）时才
+可进入 notifier API，异常或 401/403 fail-closed。TLS 只提供传输安全，不替代官方认证、
+Host/Origin 或方法检查。该接缝仍须对 notifier 隔离实测；历史代理细节见
+[LAN proxy 架构归档](dsh-lan-proxy.md)，用户迁移见
+[退役迁移](../migrations/dsh-lan-proxy.md)。
 
 正文会含标题、申请理由、错误原文，旧内容脱敏规则已退役。配置掩码只保护视图，不是磁盘加密；外部失败响应可能反射凭据并进入历史/状态。Bark 限 http(s)、拒 URL 内凭据、device_key 走 body；Webhook 模板/认证也可含敏感内容。不存在目的域白名单保证，允许内网自建服务；可达测试面的人可能触发对配置目标的出站请求。证据：`src/server/channels/impl/bark/index.ts`、`impl/webhook/index.ts`、`src/server/config/impl/redact/index.ts`，部署策略见包 README 安全模型。
 

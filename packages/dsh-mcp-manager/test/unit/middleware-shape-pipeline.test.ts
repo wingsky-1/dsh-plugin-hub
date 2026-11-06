@@ -397,9 +397,10 @@ async function withFakeExecute(value: unknown, { stale = false }: { stale?: bool
   const servers: ServerConfig[] = [
     { name: "py", transport: "stdio", command: "python", enabled: true },
   ];
-  const { host } = makeHost(new Map([[ROOT, servers]]), {
+  const { host, tools } = makeHost(new Map([[ROOT, servers]]), {
     execute: async () => ({ isError: false, content: [], value }),
   });
+  tools.register({ name: "mcp__id-py__echo" });
   const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
   const entries: Array<[string, DiskSeedEntry]> = [
     [
@@ -573,7 +574,8 @@ describe("B18 红测a：callTool 应用 server.toolCallTimeoutMs", () => {
       enabled: true,
       toolCallTimeoutMs: 100,
     };
-    const { host } = makeHost(new Map([[ROOT, [server]]]), { execute });
+    const { host, tools } = makeHost(new Map([[ROOT, [server]]]), { execute });
+    tools.register({ name: "mcp__id-s1__t1" });
     const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
     const unit = makeUnit();
     mw.units.set(ROOT, unit);

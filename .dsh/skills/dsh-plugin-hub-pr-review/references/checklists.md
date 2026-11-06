@@ -23,7 +23,8 @@
 
 ## B. 安全面（hub 红线）
 
-- 全部路由 loopback 围栏 + 方法校验（403/405），含新增路由。
+- 路由保留 loopback 快路径；非回环短请求覆盖官方 `requestRejection` 的
+  401/403/undefined/fail-closed 后再判方法错 405；非回环 SSE 覆盖 admitted Peer 生命周期。
 - 动态执行面：宿主 `import(用户 .mjs)`、客户端 blob import 执行——
   信任级是否在 README 安全节交代、失败是否只 warn 不阻断。
 - **脱敏护栏覆盖面 = 出口全覆盖 + 绕过形态抽样实测**：
@@ -65,7 +66,8 @@
 - 迁移类测试必须断言**精确计数与内容往返**，否则恰好掩盖重复/丢失类 bug。
 - **性能护栏输入形态假绿**：性能/回溯类护栏必须核对其输入是否覆盖声称防御的
   最坏路径；良性重复输入上的耗时断言视为无效证据——护栏恒绿 ≠ 无回溯退化。
-- 新功能是否有对应 smoke 断言（仓库测试纪律硬性要求，含 403/405 围栏用例）。
+- 新功能是否有对应 smoke 断言（仓库测试纪律硬性要求，含 loopback 快路径、官方
+  401/403/undefined、405 与长流 Peer 生命周期）。
 
 ---
 
@@ -127,9 +129,9 @@
 1. **纯函数直测**：Node ≥24 type stripping 直跑 .ts（`node --input-type=module -e` +
    绝对路径 import）；失败先排查 strip-types 语法限制（enum/namespace 等）再降档。
 2. **build 后直跑 lib/index.js**：实例级行为；仅此档需要先 build。
-3. **fake ctx + 路由注入**：路由级/围栏交互；fake req 必带
-   `socket.remoteAddress`/`headers.host`/`sec-fetch-site`（否则围栏 403 假阴性）；
-   async handler 要 await。
+3. **fake ctx + 路由注入**：路由级/安全准入交互；fake req 同时覆盖 loopback 与
+   非回环官方 `requestRejection` 的 401/403/undefined；非回环长流还应断言
+   `connection.admit` 的 PeerScope 释放与广播停止；async handler 要 await。
 
 复现脚本与输出落盘到评审交付目录（脚本头部自描述：目的/前提/预期输出），
 再清 worktree。复现失败先怀疑自己的验证路径，再下「误报」结论。

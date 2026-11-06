@@ -142,7 +142,10 @@ Configuration page: **Plugin Manager → dsh-mcp-manager → Configure**. The fl
 (MCP pill) position and offsets (`position` / `offset`) are saved there through the plugin's
 own `Config`; no config-file editing is needed.
 
-> Non-loopback LAN origins (for example `192.168.*:3081`) intentionally do not expose a persistent settings surface, so the Configure control is hidden by DSH's security policy. Manage settings from `127.0.0.1:3080` / `127.0.0.1:3081` or an SSH loopback tunnel. Enable dsh-lan-proxy `ownsHostCompat` only on a trusted LAN and only when you accept the shared control-plane risk.
+> Persistent settings presentation from non-loopback origins still follows the official DSH
+> page and settings security policy. Whether the Configure control appears does not change
+> the API's official identity check. Do not bypass that policy for an untrusted origin; the
+> old `dsh-lan-proxy` remote-compatibility path is retired.
 
 | Key | Allowed values | Default |
 | --- | --- | --- |
@@ -282,12 +285,12 @@ admission gate.
 - Both the floating window and the management panel group servers by
   "project-level / global" (each group further ordered by connection status).
 
-## Routes (all loopback-fenced)
+## Routes (loopback fast path + official identity admission)
 
 | Route | Description |
 | --- | --- |
 | `/api/dsh-mcp/health` | Health check (note: differs from the directory name) |
-| `/api/dsh-mcp/tool-disable` | Per-tool disable toggle (PATCH, loopback-only) |
+| `/api/dsh-mcp/tool-disable` | Per-tool disable toggle (PATCH; loopback or successful official identity admission) |
 | `/api/dsh-mcp/*` | Server management / connection control / tool listing / SSE events, etc. |
 
 ## Runtime registration (registerServer.toolDefinitions)
@@ -308,10 +311,14 @@ supports an optional `toolDefinitions` field (caller-provided wrapped tool defin
   an internal registration name; the pre-execute guard **denies by default** every `mcp__`
   direct call that is not this package's own forwarding — it no longer relies on the model
   obeying a prompt, nor on declaration-surface masking (which necessarily leaks during connection
-  flips). The single allow-path is the host-issued **in-flight** token: the sub-call of
-  `ws_mcp_call` → dispatch → `ctx.tools.execute` is admitted by its `parent`, deregistered when
-  it settles, and replaying the same token is denied. The denial text points at `ws_mcp_call`
-  and says not to retry the same call.
+  flips). The single allow-path is the host-issued **in-flight** token: inside
+  `ws_mcp_call`, the plugin loads the public `ToolExecutionPipeline` through the host loader
+  and runs the exact registered dependency with `agent` / `toolSet` / `rootCallId` /
+  `signal` and the outer `parent` token. The source resolves only when the target
+  root/server/tool policy, outer admission and parent liveness all still hold. It is
+  deregistered on settlement; replaying the same token, or a removed/replaced dependency
+  definition, is denied. The denial text points at `ws_mcp_call` and says not to retry the
+  same call.
 - **No model-visible `mcp__` direct-call tool: calls only go through `ws_mcp_call` with bare
   names** (`@<root>/<server>` + bare name; a wrapped `execute` is caller JS, so there is
   no remote implementation to call directly). The call name is still derived via
@@ -346,8 +353,11 @@ await ctx.mcpManager.registerServer({
   secrets themselves**); on-disk 0600 permissions + same-directory temporary-file atomic replacement.
   On Windows, `EPERM` / `EBUSY` replacement errors receive bounded asynchronous retries; an external
   change detected during the wait aborts the save and preserves the external contents.
-- All `/api/dsh-mcp/*` routes are restricted to loopback access (non-loopback → 403 / wrong
-  method → 405)
+- All `/api/dsh-mcp/*` routes retain the loopback fast path. A non-loopback short request
+  must pass official `requestRejection` checks for Host/Origin, cross-site, cookie/API peer;
+  errors, 401/403 or unknown results fail closed, and only an admitted request reaches the
+  405 method check. A non-loopback SSE stream also retains the admitted PeerScope from
+  `connection.admit`; peer release stops broadcasts, removes it and closes the response
 - **stdio subprocess environment sanitization (official dsh-mcp-client semantics)**: sanitization
   applies to the **inherited parent environment** only — credential-shaped names (`KEY` /
   `PASSWORD` / `SECRET` / `TOKEN`) and every `DSH_*` variable are stripped from the parent
@@ -396,6 +406,17 @@ await ctx.mcpManager.registerServer({
   per-tool disable table; `ws_mcp_call` error messages follow an
   "explicit + next step" style (confirm the server connection / verify the argument schema
   with `ws_mcp_detail` / check the per-tool disable state)
+- **MCP image attachment hard limits**: each official MCP client receives its own
+  `attachments` scope and a concrete `saveImages` facade owned by that wrapper. After the SDK
+  decodes images and before the root attachment store persists them, the facade enforces at
+  most 10 images per result and 8 MiB per image. An over-limit batch is not persisted; the
+  model receives unavailable diagnostics while the raw MCP result remains available to
+  programmatic callers. The facade looks up the current store from the unisolated parent
+  Context on every call, so a missing, late or replaced store fails closed rather than
+  retaining a stale reference. A normal official projection is reused and persisted once,
+  without a second `saveImages`. Disposing the client wrapper removes only its facade and
+  official child; the root store and other clients are unaffected. This check runs after SDK
+  decoding and does not claim to cap pre-decode memory.
 - **Per-tool disable (three entry points consistent)**: `ws_mcp_call` (callTool checks the
   disable table), the pre-execute guard (`mcp__`-prefixed direct calls),
   and plugins' own declared discipline bare-name tools all go through the single

@@ -21,7 +21,9 @@
 
 ## 1. curl 类检核（宿主路由/围栏/长度/安全头）
 
-- 路由围栏：非回环请求 → 预期 403；方法错 → 预期 405；正常路由 → 200。
+- 路由围栏：loopback 快路径正常；非回环短请求按官方 `requestRejection` 记录
+  401/403/undefined，异常 fail-closed，认证通过后才检查 405；非回环长流还要验证
+  admitted PeerScope 释放后不再广播。
 - 请求体/路径长度边界：长路径实测命中真实失败码（如 Node 431@~16KB）——**以实测为准，
   不凭文档或推理**。
 - 安全头/响应体：敏感面响应无意外泄漏（token/绝对路径/内部信息）。
@@ -39,7 +41,8 @@
 
 ## 3. node smoke 类检核（纯函数/契约/围栏）
 
-- 每新增行为配 smoke 断言（fake ctx，无网络）；含 403/405 围栏用例、两端路由一致性。
+- 每新增行为配 smoke 断言（fake ctx，无网络）；含 loopback 快路径、官方
+  401/403/undefined、405、长流 Peer 生命周期和两端路由一致性。
 - 产物契约：`assertClientSourceContract` / `assertClientProductContract`（hub 三种产物形态）；
   零运行时依赖、无游离 css、`lib/` 是构建产物不手改。
 - 窗口/批次类逻辑：独立 apply + 短窗口配置 + 短 await；定时器 `unref()` 防吊死测试进程。

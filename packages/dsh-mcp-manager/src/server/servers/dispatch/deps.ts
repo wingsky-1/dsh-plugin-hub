@@ -8,8 +8,8 @@
  *
  * 两条都是**类型边**（形状经各自 interface.ts 取），值由调用方按 `DispatchCallInput` 递进来——
  * 本片（S1-3a）起是转发壳，装配表不动，故本域没有 `installXxx` 端口持有者；域间仍是零值边。
- * 换引擎后（S1-4d）远端分支改道宿主的 `ctx.tools.execute`：执行能力、注册名派生与转发登记表
- * 也一并按引用递入，本域仍不持任何状态。
+ * 0.2.2-rc.1 远端分支经调用方递入的公开 nested `ToolExecutionPipeline` seam：执行能力、
+ * 注册名派生与转发登记表一并按引用递入，本域仍不持任何状态。
  *
  * 中间层的工作空间单元、连接条目与凭据脱敏源**不复制**进本域：`units` 按引用递入、
  * `allServers` 递取值器（脱敏只在出错路径上读服务器表），本域只读不留，避免第二个事实源。
@@ -81,12 +81,14 @@ export interface DispatchCallInput {
   readonly rawArgs: unknown;
   /** 调用方取消信号（透传给两分支与超时兜底）。 */
   readonly signal: AbortSignal | undefined;
-  /** 调用方会话 agent（封装直呼分支透传，供 session cwd 解析）。 */
-  readonly agent: unknown;
+  /** 调用方会话 agent（封装直呼、nested identity、scope/policy 统一透传）。 */
+  readonly agent: ToolExecutionInput["agent"];
   /** 本次外层调用的 id：合成子调用 id 的父前缀（`<parent>:mcp:1`，先例见 dsh-tools 的 PTC）。 */
   readonly callId: ToolExecutionInput["callId"];
   /** 根调用 id：有就透传——宿主按 `rootCallId ?? callId` 回填，不带会把子调用误标成新根。 */
   readonly rootCallId?: ToolExecutionInput["rootCallId"];
+  /** 模型步骤 admission；nested pipeline 与根调用共用同一 ResolvedToolSet。 */
+  readonly toolSet?: ToolExecutionInput["toolSet"];
   /**
    * 外层调用的 token，作为子调用的 `parent` 透传：PTC 模式下不带 parent 的原生名直呼会被
    * 判 UNKNOWN_TOOL；同一 token 也是 guard 识别「这次调用出自我方转发」的凭据（裁定 R/Z）。
@@ -112,7 +114,7 @@ export interface DispatchCallInput {
   readonly defaultCallTimeoutMs: number;
   /** 注册名派生（唯一派生点是中间层的 publicToolName；本域不得自己拼 `mcp__<id>__<tool>`）。 */
   readonly registeredNameFor: (id: string, tool: string) => string;
-  /** 宿主工具执行面（本域只转发；结果用 `value` 喂投影，与旧链路逐字节等价）。 */
+  /** 宿主工具执行面；已物化模型内容经 nested hooks 交回，不混入公开工具结果。 */
   readonly execute: (input: ToolExecutionInputLike) => Promise<ToolExecutionResultLike>;
   /** 在飞的转发登记表（按引用递入）：派发前后登记 / 注销 `parent`，guard 据此放行。 */
   readonly forwarding: Set<ToolExecutionToken>;
