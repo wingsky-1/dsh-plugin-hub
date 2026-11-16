@@ -19,7 +19,7 @@
 
 ## 脚本自动完成的链路
 
-建临时 `DSH_HOME` → 校验 PATH 中的 dsh 入口并打印版本（只认 `0.2.2-rc.1`）→ **预置首启弹窗跳过**
+建临时 `DSH_HOME` → 校验 PATH 中的 dsh 入口并打印版本（只认 `0.2.2-rc.3`）→ **预置首启弹窗跳过**
 （写隔离 `$DSH_HOME/settings.yaml` 的内测声明版本与命名空间，见 SKILL.md「首启弹窗默认跳过」；
 `--no-skip-onboarding` 关闭）→ 建 `verify_<8位随机>` profile
 （`dsh plugin --profile <p> list` 显式初始化，失败即报可操作错误）→ 注入内置
