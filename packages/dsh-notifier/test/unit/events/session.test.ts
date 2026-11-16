@@ -10,7 +10,6 @@ import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import { describe, expect, it } from "vitest";
 
-import { makeSubagentTree } from "../../helpers.ts";
 import {
   isSubagentOf,
   lastTurnEndOf,
@@ -202,31 +201,20 @@ describe("新增会话事件不改变证据读取语义", () => {
 });
 
 describe("isSubagentOf：子代理归属判定", () => {
-  it("origin 命中即真", () => {
-    const agent = makeAgent("sub-origin", { header: { origin: "subagent" } });
-    expect(isSubagentOf(agent, makeSubagentTree())).toBe(true);
+  it("官方 origin=subagent 标记该会话为子代理", () => {
+    const agent = makeAgent("sub-origin", {
+      header: { parentSession: "p-owner", origin: "subagent" },
+    });
+    expect(isSubagentOf(agent)).toBe(true);
   });
 
-  it("没有 parentSession 就是主任务", () => {
+  it("只有 parentSession 的普通 fork 不分类为子代理", () => {
+    const fork = makeAgent("fork-user", { header: { parentSession: "p-live" } });
+    expect(isSubagentOf(fork)).toBe(false);
+  });
+
+  it("没有 origin 或 parentSession 的根 Agent 是主任务", () => {
     const agent = makeAgent("main-root", { header: {} });
-    expect(isSubagentOf(agent, makeSubagentTree())).toBe(false);
-  });
-
-  it("普通用户 fork 的 rootOf 仍是自身，不误报为子代理", () => {
-    const child = makeAgent("fork-user", { header: { parentSession: "p-live" } });
-    expect(isSubagentOf(child, makeSubagentTree())).toBe(false);
-  });
-
-  it("DSH 将受管子代理解析到不同的活体根时判子代理", () => {
-    const child = makeAgent("sub-managed", { header: { parentSession: "p-owner" } });
-    const parent = makeAgent("p-owner");
-    const subagents = makeSubagentTree({ roots: [[child, parent]] });
-    expect(isSubagentOf(child, subagents)).toBe(true);
-  });
-
-  it("可选的 subagents 服务缺位时按主任务降级", () => {
-    const child = makeAgent("fork-orphan", { header: { parentSession: "p-gone" } });
-    const unavailable = { rootOf: () => undefined };
-    expect(isSubagentOf(child, unavailable)).toBe(false);
+    expect(isSubagentOf(agent)).toBe(false);
   });
 });

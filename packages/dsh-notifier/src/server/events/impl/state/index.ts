@@ -16,15 +16,8 @@ import type {
 
 const NOT_INSTALLED = "dsh-notifier: events 域状态机尚未装配";
 
-/** 未装配时的占位：真被读到说明装配守卫有洞，当场暴露而不是按空状态判定；日志没人听，静默。 */
-const UNINSTALLED: StateDeps = {
-  logger: { warn: () => {} },
-  subagents: {
-    rootOf: () => {
-      throw new Error(NOT_INSTALLED);
-    },
-  },
-};
+/** 未装配时供类型占位；idle 结算入口显式 fail-fast，避免依赖假服务暴露装配漏洞。 */
+const UNINSTALLED: StateDeps = { logger: { warn: () => {} } };
 
 /** 完成判定与 turn 去重的状态机。 */
 class AgentStateMachine {
@@ -104,6 +97,7 @@ class AgentStateMachine {
   }
 
   private settleIdle(agent: Agent, run: AgentRun): DoneOutcome {
+    if (!this.installed) throw new Error(NOT_INSTALLED);
     const durationMs = run.startedAt > 0 ? Date.now() - run.startedAt : 0;
     run.runningSeen = false;
     run.startedAt = 0;
@@ -119,7 +113,7 @@ class AgentStateMachine {
     const title = sessionTitleOf(agent);
     return {
       ok: true,
-      kind: isSubagentOf(agent, this.deps.subagents) ? "subagent-done" : "done",
+      kind: isSubagentOf(agent) ? "subagent-done" : "done",
       taskTitle: title.found ? title.title : undefined,
       durationMs,
     };

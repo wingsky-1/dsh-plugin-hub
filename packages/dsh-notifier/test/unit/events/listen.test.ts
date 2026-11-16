@@ -18,7 +18,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   AgentDisposedPayload,
   AgentErrorPayload,
-  SubagentTreePort,
   AgentStatusPayload,
   AgentTurnStoppingPayload,
   EventsDeps,
@@ -26,7 +25,7 @@ import type {
   NotifyRequest,
 } from "../../../src/server/events/deps.ts";
 import { installEvents, releaseEvents } from "../../../src/server/events/interface.ts";
-import { makeSubagentTree, makeLogger } from "../../helpers.ts";
+import { makeLogger } from "../../helpers.ts";
 
 afterEach(() => {
   releaseEvents();
@@ -155,13 +154,12 @@ function makeSession(
 }
 
 /** 装配一次 events 域，交出观测面。 */
-function assemble(options: { subagents?: SubagentTreePort } = {}) {
+function assemble() {
   const events = makeHostEvents();
   const logger = makeLogger();
   const submitted: NotifyRequest[] = [];
   const deps: EventsDeps = {
     events: events.port,
-    subagents: options.subagents ?? makeSubagentTree(),
     logger,
     pipeline: {
       submit: (request) => {
@@ -350,38 +348,27 @@ describe("完成判定：running 起记、idle 结算", () => {
   });
 });
 
-describe("子代理归属：main 与 subagent 的 kind 分流", () => {
+describe("子代理归属：origin 控制 main 与 subagent 的 kind 分流", () => {
   it("origin=subagent 的会话报 subagent-done", () => {
     const { events, submitted } = assemble();
-    const session = makeSession("s-origin", { title: "子任务", header: { origin: "subagent" } });
+    const session = makeSession("s-origin", {
+      title: "子任务",
+      header: { parentSession: "p-owner", origin: "subagent" },
+    });
     setStatus(events, session, "running");
     session.endTurn(1);
     setStatus(events, session, "idle");
-    expect(submitted[0]!.kind).toBe("subagent-done");
+    expect(submitted.map((request) => request.kind)).toEqual(["subagent-done"]);
     expect(submitted[0]!.body).toContain("子任务「子任务」已完成");
   });
 
-  it("rootOf 将受管子代理解析到父树时，完成类型为 subagent-done", () => {
-    const parent = makeSession("p-owner");
-    const child = makeSession("s-owned", { header: { parentSession: "p-owner" } });
-    const { events, submitted } = assemble({
-      subagents: makeSubagentTree({ roots: [[child.agent, parent.agent]] }),
-    });
-    setStatus(events, child, "running");
-    child.endTurn(1);
-    setStatus(events, child, "idle");
-    expect(submitted[0]!.kind).toBe("subagent-done");
-  });
-
-  it("可选 subagents 服务缺位时仍按主任务发送 done", () => {
-    const { events, submitted } = assemble({
-      subagents: { rootOf: () => undefined },
-    });
-    const child = makeSession("s-orphan", { header: { parentSession: "p-gone" } });
-    setStatus(events, child, "running");
-    child.endTurn(1);
-    setStatus(events, child, "idle");
-    expect(submitted[0]!.kind).toBe("done");
+  it("只有 parentSession 的普通 fork 仍走主任务 done 路径", () => {
+    const { events, submitted } = assemble();
+    const fork = makeSession("s-fork", { header: { parentSession: "p-owner" } });
+    setStatus(events, fork, "running");
+    fork.endTurn(1);
+    setStatus(events, fork, "idle");
+    expect(submitted.map((request) => request.kind)).toEqual(["done"]);
   });
 });
 

@@ -13,7 +13,6 @@ import {
   captureWarnings,
   countKind,
   fakeAgent,
-  fakeSubagents,
   fakeSession,
   fakeSettings,
   fakeWebServer,
@@ -337,61 +336,31 @@ describe("宿主事件可达性", () => {
   registerHostEventDelivery();
 });
 
-describe("宿主 subagents 服务（子代理归属）", () => {
-  it("subagents 服务缺位：带 parentSession 的会话按主任务处理", async () => {
+describe("会话 origin 元数据（子代理归属）", () => {
+  it("只有 parentSession 的普通 fork 仍发送 done", async () => {
     const { root, unmount } = await mount({});
-    // 可选的 rootOf 服务缺位时应安全降级，而不是误分类或抛错丢失完成通知。
     const events: SessionEvent[] = [];
-    const child = fakeAgent("itest-orphan", events, { parentSession: "itest-gone" });
+    const fork = fakeAgent("itest-fork", events, { parentSession: "itest-parent" });
 
-    root.emit("agent/status", { agent: child, status: "running" });
+    root.emit("agent/status", { agent: fork, status: "running" });
     events.push(turnEndEvent(1, "completed"));
-    root.emit("agent/status", { agent: child, status: "idle" });
-    await pollUntil(() => countKind("done") === 1, "subagents 服务缺位时按主任务报完成");
+    root.emit("agent/status", { agent: fork, status: "idle" });
+    await pollUntil(() => countKind("done") === 1, "普通 fork 按主任务报完成");
     expect(countKind("subagent-done")).toBe(0);
     await unmount();
   });
 
-  it("rootOf 查询失效时仍发送 done 并记录诊断", async () => {
-    const childEvents: SessionEvent[] = [];
-    const child = fakeAgent("itest-tree-unavailable", childEvents, {
+  it("origin=subagent 的子会话发 subagent-done，不重复报主任务 done", async () => {
+    const events: SessionEvent[] = [];
+    const child = fakeAgent("itest-child", events, {
       parentSession: "itest-parent",
+      origin: "subagent",
     });
-    const { root, unmount, warns } = await mount({
-      services: {
-        subagents: {
-          rootOf: () => {
-            throw new Error("runtime tree unavailable");
-          },
-        },
-      },
-    });
-
-    root.emit("agent/status", { agent: child, status: "running" });
-    childEvents.push(turnEndEvent(1, "completed"));
-    root.emit("agent/status", { agent: child, status: "idle" });
-    await pollUntil(() => countKind("done") === 1, "归属查询失败后仍发送主任务完成通知");
-    expect(countKind("subagent-done")).toBe(0);
-    expect(
-      warns.some(
-        (line) => line.includes("子代理归属读取失败") && line.includes("runtime tree unavailable"),
-      ),
-    ).toBe(true);
-    await unmount();
-  });
-
-  it("rootOf 返回不同树根时落 subagent-done，而不是当成主任务再报一次", async () => {
-    const parent = fakeAgent("itest-parent");
-    const events: SessionEvent[] = [];
-    const child = fakeAgent("itest-child", events, { parentSession: "itest-parent" });
-    const { root, unmount } = await mount({
-      services: { subagents: fakeSubagents(parent, child) },
-    });
+    const { root, unmount } = await mount({});
 
     root.emit("agent/status", { agent: child, status: "running" });
     events.push(turnEndEvent(1, "completed"));
     root.emit("agent/status", { agent: child, status: "idle" });
-    // 两跳判定的产物只有 kind 能区分：`done` 会让每个子代理都伪装成用户的主任务。
     await pollUntil(() => countKind("subagent-done") === 1, "子代理完成通知落史");
     expect(countKind("done")).toBe(0);
     await unmount();

@@ -27,7 +27,6 @@ import { afterAll, afterEach, beforeEach, expect, vi } from "vitest";
 import { Context } from "@deepseek-ai/cordis";
 import type { Events, Fiber, ThisType as EventThis } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
-import type {} from "@deepseek-ai/dsh-subagent";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { Session, SessionEvent } from "@deepseek-ai/dsh-session";
 import type { ApprovalOutcome } from "@deepseek-ai/dsh-user-approval";
@@ -263,13 +262,6 @@ export function fakeWebServer(
     },
   } as unknown as Context["webServer"];
   return { service, routes, removals };
-}
-
-/** 假 DSH subagents 服务：受管 child 指向 root，普通 Agent 的 root 是自身。 */
-export function fakeSubagents(parent: Agent, child: Agent): Context["subagents"] {
-  return {
-    rootOf: (agent: Agent) => (agent === child ? parent : agent),
-  } as unknown as Context["subagents"];
 }
 
 /**

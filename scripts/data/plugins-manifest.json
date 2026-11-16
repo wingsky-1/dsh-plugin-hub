@@ -21,7 +21,6 @@
     "dsh-notifier": [
       "@deepseek-ai/cordis",
       "@deepseek-ai/dsh-agent",
-      "@deepseek-ai/dsh-subagent",
       "@deepseek-ai/dsh-host-webserver",
       "@deepseek-ai/dsh-session",
       "@deepseek-ai/dsh-session-title",

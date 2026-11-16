@@ -12,11 +12,9 @@ import { join } from "node:path";
 
 import { vi } from "vitest";
 
-import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { DeliverResult } from "../src/server/channels/impl/deliver/type.ts";
 import type { RemoteAccessPort } from "../src/server/api/deps.ts";
-import type { SubagentTreePort } from "../src/server/events/deps.ts";
 import type { DeliverReason, LoggerPort } from "../src/server/shared/interface.ts";
 import {
   admitLongLivedRequest,
@@ -209,14 +207,6 @@ export function reasonOf(result: DeliverResult): DeliverReason {
 export function retryableOf(result: DeliverResult): boolean {
   if (result.status !== "failed") throw new Error(`期望失败，实际 ${result.status}`);
   return result.retryable;
-}
-
-/** 假 DSH subagent tree：只提供 Agent 到根 Agent 的官方查询结果。 */
-export function makeSubagentTree(
-  options: { roots?: ReadonlyArray<readonly [Agent, Agent]> } = {},
-): SubagentTreePort {
-  const roots = new Map(options.roots ?? []);
-  return { rootOf: (agent) => roots.get(agent) ?? agent };
 }
 
 /** 跨边界喂值：编译期联合不代表运行时的值也在枚举里，守的正是编译期管不到的那一侧。 */

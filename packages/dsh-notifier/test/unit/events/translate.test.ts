@@ -154,10 +154,7 @@ describe("会话内事件：只记账，不产出", () => {
     expect(translateSessionEvent("s1", turnEndEvent(4)).ok).toBe(false);
 
     // 「记账」的唯一可观测出口：idle 判定读的就是这条推送来的证据，没记住就永远判不出完成。
-    agentStates.install({
-      logger: makeLogger(),
-      subagents: { rootOf: (current) => current },
-    });
+    agentStates.install({ logger: makeLogger() });
     agentStates.observeStatus({ agent, status: "running" });
     expect(agentStates.observeStatus({ agent, status: "idle" })).toMatchObject({
       ok: true,
@@ -170,9 +167,8 @@ describe("会话内事件：只记账，不产出", () => {
     expect(translateSessionEvent("s1", unknown).ok).toBe(false);
   });
 
-  // 占位能力是「抛错」而不是「空实现」：没人听的日志出口会静默，但装配守卫有洞时必须当场暴露，
-  // 否则表现为「通知全没了、且没有任何线索指向装配」。
-  it("未装配时判定路过的状态机当场抛错（占位成抛错而非按空状态判定）", () => {
+  // 未装配状态机不能结算 idle 完成：显式装配守卫避免事件路过后悄悄产出错误分类。
+  it("未装配时 idle 完成结算当场抛错", () => {
     const agent = {
       id: "u-uninstalled",
       session: { header: { parentSession: "p-gone" }, snapshotEvents: () => [] },
@@ -180,7 +176,7 @@ describe("会话内事件：只记账，不产出", () => {
 
     agentStates.observeStatus({ agent, status: "running" });
     agentStates.rememberTurnEnd(agent.id, { turn: 1, kind: "completed" });
-    // 归属查询是这条判定路上唯一碰到装配入参的一步：它在未装配时应当抛「尚未装配」。
+    // idle 结算必须经过状态机的显式装配守卫，而不是依赖某个宿主服务碰巧抛错。
     expect(() => agentStates.observeStatus({ agent, status: "idle" })).toThrow(/尚未装配/u);
   });
 });

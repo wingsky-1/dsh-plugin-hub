@@ -1,6 +1,5 @@
 /** events 域依赖声明：本域只声明「我需要外部什么」，装配由组合根递进来；声明面**只有类型**。 */
 import type { Events } from "@deepseek-ai/cordis";
-import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import type { ApprovalRequest } from "@deepseek-ai/dsh-user-approval";
 import type { AskUserQuestionRequest } from "@deepseek-ai/dsh-user-questions";
@@ -24,11 +23,6 @@ export type AgentTurnStoppingPayload = Parameters<Events["agent/turn-stopping"]>
 export type AgentErrorPayload = Omit<Parameters<Events["agent/error"]>[0], "error"> & {
   error: string;
 };
-
-/** DSH 0.2.2-rc.3 `subagents.rootOf` 的最小运行时读面；undefined 表示可选服务未挂载。 */
-export interface SubagentTreePort {
-  rootOf(agent: Agent): Agent | undefined;
-}
 
 /** 宿主事件面：订阅 + 退订，仅此而已——域拿到的是**事件源**，不是宿主。参数用官方类型层的原始负载，不做二次包装
  * （包装会产生一个与本域判断无关的中间形状，而解释事件本来就是本域的工作）；agent 事件尤其不能只给 id：任务名、
@@ -54,8 +48,6 @@ export interface HostEventPort {
 export interface EventsDeps {
   /** 宿主事件面：只有组合根够得着 `ctx`。 */
   readonly events: HostEventPort;
-  /** DSH subagent tree service：完成分类只需从活体 Agent 解析运行时树根。 */
-  readonly subagents: SubagentTreePort;
   /** 诊断出口：完成判定跳过（abort / max-tokens 每轮都走）时要说得出为什么。 */
   readonly logger: LoggerPort;
   readonly pipeline: PipelinePort;

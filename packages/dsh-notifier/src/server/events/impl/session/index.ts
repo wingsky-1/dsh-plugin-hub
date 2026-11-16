@@ -7,7 +7,6 @@ import type { Agent } from "@deepseek-ai/dsh-agent";
 import type {} from "@deepseek-ai/dsh-session-title";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import type { TurnEndReason } from "@deepseek-ai/dsh-session/types";
-import type { SubagentTreePort } from "../../deps.ts";
 import type { SessionTitle, TurnEndRead } from "./type.ts";
 // 截断走包内唯一的 code-point 截断而不是 `String.prototype.slice`：同包 8 个展示出口
 // （bark / webhook / browser / system / pipeline finalize / shared reason）都用它，
@@ -64,14 +63,11 @@ export function lastTurnEndOf(agent: Agent): TurnEndRead {
 }
 
 /**
- * 是否子代理：`origin` 命中即真；否则用 DSH 的 rootOf 区分托管子代理与普通 Session fork。
- * 普通 Agent / 用户 fork 的 root 是自身；归属服务缺位时按主任务分支，不静默用户任务。
+ * 是否子代理：只认官方 SessionHeader 的 origin 分类标记。parentSession 也可能保留在历史普通 fork
+ * 上，单独出现不足以分类；`origin: "subagent"` 才表示该会话创建为子代理。
  */
-export function isSubagentOf(agent: Agent, subagents: SubagentTreePort): boolean {
-  if (agent.session.header.origin === "subagent") return true;
-  if (agent.session.header.parentSession === undefined) return false;
-  const root = subagents.rootOf(agent);
-  return root !== undefined && root !== agent;
+export function isSubagentOf(agent: Agent): boolean {
+  return agent.session.header.origin === "subagent";
 }
 
 /** `reason.kind` 的运行时取值；拿不到字符串就按空值处理。 */
