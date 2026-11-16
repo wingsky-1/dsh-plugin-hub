@@ -74,7 +74,7 @@ rc 升级流程引用：升级 dsh rc 时按本清单逐条核对上游变更（
 | dsh-mcp-manager | agent/created | packages/dsh-mcp-manager/src/server/shared/compose.ts（能力面转发） |
 | dsh-mcp-manager | agent/disposed | packages/dsh-mcp-manager/src/server/shared/compose.ts（能力面转发） |
 | dsh-mcp-manager | tools/change | packages/dsh-mcp-manager/src/server/shared/compose.ts（能力面转发） |
-| dsh-provider-usage | session/event | packages/dsh-provider-usage/src/apply/apply.ts（唯一目标 runtime `0.2.2-rc.1` 的结算事实源） |
+| dsh-provider-usage | session/event | packages/dsh-provider-usage/src/apply/apply.ts（唯一目标 runtime `0.2.2-rc.3` 的结算事实源） |
 | dsh-provider-usage | session/flush | packages/dsh-provider-usage/src/apply/apply.ts |
 | dsh-provider-usage | session/disposed | packages/dsh-provider-usage/src/apply/apply.ts |
 | dsh-provider-usage | internal/service | packages/dsh-provider-usage/src/apply/apply.ts |
@@ -177,9 +177,9 @@ provider-usage 经 `ctx.webServer.register`（`src/apply/apply.ts`）；notifier
 | 常量 / 锚 | 值 | 形态 | 出处与断言 |
 | --- | --- | --- | --- |
 | MCP_SECTION_ORDER | 160 | 常量 | `packages/dsh-mcp-manager/src/index.ts:562`；语义“紧随部署 persona 之后、计划策略之前（0 小于 160 小于 500）”，`sectionCall=true`（843 行经 `ctx.systemPrompt` 调用），`orderRangeOk=true`；区间由 smoke 锁定 |
-| SESSION 结算口径 | 唯一目标 runtime `0.2.2-rc.1` 的事实源为 `ctx.on("session/event")`；`assistant/chunk` 未登记，`assistant/message`（内嵌 stream）+ `assistant/attempt` 为结算信号 | 版本锚 | 派生自目标 catalog 与当前 collector；`SESSION_FORMAT_VERSION` 无代码符号锚（仅存档文档提及 0→3），`collectorMentionsChunkRemoval=false` |
+| SESSION 结算口径 | 唯一目标 runtime `0.2.2-rc.3` 的事实源为 `ctx.on("session/event")`；`assistant/chunk` 未登记，`assistant/message`（内嵌 stream）+ `assistant/attempt` 为结算信号 | 版本锚 | 派生自目标 catalog 与当前 collector；`SESSION_FORMAT_VERSION` 无代码符号锚（仅存档文档提及 0→3），`collectorMentionsChunkRemoval=false` |
 | 当前会话判据 | `retainedBy.mainView > 0`（rc.2 起会话列表快照**无** `current` 字段） | 常量（#1028） | 官方自用判据：写入方是 `dsh-client-ui-workspace` 的 `retain(target,{source:"mainView"})`，读取方遍布 `dsh-client-ui-session` / `ui-workspace` / `ui-layout` 等官方包；本仓经 `packages/dsh-mcp-manager/src/client/core/current-session.ts` 单一接缝消费，并以官方类型锚定：`SessionSummary.retainedBy.mainView` 走类型化访问（上游改名即 TS2339 判红，见该文件的副作用式类型导入）。**非承诺公开 API**：`mainView` 由 `dsh-client-ui-session` 声明合并注入 `SessionReferenceSourceMap`，退路＝跟随官方演进，必要时向上游提 issue 索取「当前会话」面 |
-| catalog 锁版 | `dsh-*` 23 个均为 `0.2.2-rc.1`，`@deepseek-ai/cordis` 独立为 `4.1.0` | 版本锚 | [pnpm-workspace.yaml](../pnpm-workspace.yaml) 字面量派生（派生输出 `result.catalog`，24 项）；唯一目标 runtime 之外的版本不在支持范围 |
+| catalog 锁版 | `dsh-*` 23 个均为 `0.2.2-rc.3`，`@deepseek-ai/cordis` 独立为 `4.1.0` | 版本锚 | [pnpm-workspace.yaml](../pnpm-workspace.yaml) 字面量派生（派生输出 `result.catalog`，24 项）；唯一目标 runtime 之外的版本不在支持范围 |
 | 官方地址复刻 | （无现存复刻：全包 `dsh-resource://` / `fileAddressFor` 0 命中，已随 dsh-web-file-preview 退役消除） | 常量 | 全仓 grep 观察值 |
 | DOM 锚（11 条） | `details.dm-float-tools`；`[data-conversation-scroll]`；`[data-pane="conversation"]`；`.pI_x6G_centerCol`；`[data-shell-overlay]`；`[data-composer-seat]`；`.${PILL_PREFIX}label`；`.${PILL_PREFIX}dot` | 版本锚（宿主 DOM 私有约定，无版本锚） | 派生输出 `result.domAnchors`：前 6 条出自 `packages/dsh-mcp-manager/src/client/float/float.ts`，后 5 条出自 `packages/dsh-provider-usage/src/client/index.tsx`（`[data-composer-seat]` 等 3 条两端共用）；宿主改壳即静默漂移 |
 
@@ -198,7 +198,7 @@ provider-usage 经 `ctx.webServer.register`（`src/apply/apply.ts`）；notifier
 | 8 | 缺口 G3（slot 协议） | `plugins.row.config` 的 canonical row id / bundle key 与 `settings.section` 的 label thunk 语义由当前实现和客户端产物断言；其它 runtime 不在本清单支持范围 |
 | 9 | 缺口 G4（DOM 锚） | 11 条选择器均为宿主 DOM 私有约定，无版本锚；派生只能列出当前在用 |
 | 10 | 缺口 G5（类型版本锚） | **已落地部分**：settings / llm / sessions / webServer / agents / configForms / slots / locale 八条服务面已按表 8 锚到官方 catalog 类型（settings 经 shared 的 `HostSettings*` 锚、notifier / provider-usage 消费；llm / agents 由 provider-usage / mcp-manager 锚定）；**仍缺**：credentials / attachments / loader / sessionProjections 无对应官方 catalog 类型包（表 8 豁免），且锚只覆盖本仓实际消费的最小面——未消费的方法/字段上游改名仍不可见。历史破坏点（`Session.fromRestore` 第 5 参、`EpochHeader.system` 删除）仍只活在存档文档里 |
-| 11 | 验证状态 | 目标 catalog 为 `0.2.2-rc.1` / Cordis `4.1.0`。verify-isolated 工具测试 385/385 通过；真实独立 browser smoke 曾运行，但进程以操作者中断的 exit 130 结束，不形成 terminal PASS，固定树 QA 仍须重跑。全量 `gate:pr`、native LAN Peer 生命周期和逐插件隔离宿主验收仍为 `NOT-RUN`。旧 DSH 证据不构成当前 rc.1 通过依据。 |
+| 11 | 验证状态 | 目标 catalog 为 `0.2.2-rc.3` / Cordis `4.1.0`。verify-isolated 工具测试 385/385 通过；2026-11-16 本地全仓 `gate:pr` 41/41 通过（`aggregate:check` 与 `verify:npmlayout` 同步 exit 0）。真实独立 browser smoke 曾运行，但进程以操作者中断的 exit 130 结束，不形成 terminal PASS，固定树 QA 仍须重跑；native LAN Peer 生命周期和逐插件隔离宿主验收仍为 `NOT-RUN`。旧 DSH 证据不构成当前 rc.3 通过依据。 |
 
 <a id="hc-t8"></a>
 ## 表 8 宿主服务面类型锚与豁免
@@ -213,7 +213,7 @@ tsc 期判红）；官方没有 catalog 类型包的登记豁免，写明理由�
 | # | 服务面 | 端 | 类型锚（官方包 / 类型）或豁免 | 状态 | 出处与断言 |
 | --- | --- | --- | --- | --- | --- |
 | 1 | settings | 宿主 | anchor：`@deepseek-ai/dsh-settings` 的 `SettingsForms` / `SettingsDescriptor` / `SettingsDescribeOptions`；provider-usage 的 seam 直接 `import type SettingsForms`（内部类型，不进入公开面） | 已锚定（#1164 WP1 + WP3） | `shared/settings-namespace.ts`；`packages/dsh-provider-usage/src/server/registry/provider-config.ts`；`packages/dsh-notifier/src/server/upgrade/impl/legacy/type.ts:2`（官方 import type，既有） |
-| 2 | credentials | 宿主 | exempt：catalog 无官方 credentials 包（0.2.2-rc.1 未发布类型层），只能经 settings seam 服务面注入 + 消费点自持最小形状 | 豁免（待上游发布官方类型包后改回锚定） | `pnpm-workspace.yaml` catalog 无 credentials 键；`packages/dsh-provider-usage/src/server/registry/provider-config.ts`（#1164 WP3：settings 面已从 `SettingsForms` 派生；credentials 保留 duck，方法存在性由 `seamDiagnosticOf` 运行时守） |
+| 2 | credentials | 宿主 | exempt：catalog 未登记官方 credentials 包，只能经 settings seam 服务面注入 + 消费点自持最小形状 | 豁免（待上游类型包进 catalog 后改回锚定） | `pnpm-workspace.yaml` catalog 无 credentials 键；`packages/dsh-provider-usage/src/server/registry/provider-config.ts`（#1164 WP3：settings 面已从 `SettingsForms` 派生；credentials 保留 duck，方法存在性由 `seamDiagnosticOf` 运行时守） |
 | 3 | llm | 宿主 | anchor：`@deepseek-ai/dsh-llm` 的 `LlmRuntime`（`Context["llm"]` 声明合并）；mcp-manager 的 `ModelInfoPort = Pick<Context["llm"], "resolveModelInfo">` | 已锚定（provider-usage 的目录面经 `Context["llm"]` 派生；mcp-manager 晚读 `ctx.get("llm")` 但形状以官方为唯一来源，#1164 WP3 + WP4） | `packages/dsh-provider-usage/src/apply/apply.ts:203`、`src/server/report-routes/reports.ts`；`packages/dsh-mcp-manager/src/server/shared/host-faces.ts:67-74` |
 | 4 | sessions | 宿主 + 客户端 | anchor：宿主 `@deepseek-ai/dsh-session` 的 `SessionStore`（`Context["sessions"]`）；客户端 `@deepseek-ai/dsh-api-session-controller` 的 `ISessions`（`client` 入口） | 已锚定 | `packages/dsh-provider-usage/src/apply/apply.ts:454`、`src/client/index.tsx:26`；`packages/dsh-mcp-manager/src/client/core/state.ts:15` |
 | 5 | webServer | 宿主 | anchor：`@deepseek-ai/dsh-host-webserver` 的 `WebServer`（`Context["webServer"]`） | 已锚定 | mcp-manager / notifier / provider-usage 的 `export const inject`（表 3）；mcp-manager `src/server/shared/host-faces.ts:78` |

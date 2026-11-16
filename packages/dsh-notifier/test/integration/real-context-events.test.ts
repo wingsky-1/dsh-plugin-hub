@@ -14,8 +14,10 @@ import {
   countKind,
   fakeAgent,
   fakeAgents,
+  fakeAgentsRc3,
   fakeSession,
   fakeSettings,
+  fakeSubagents,
   fakeWebServer,
   historyLines,
   kindLine,
@@ -364,6 +366,25 @@ describe("宿主 agent 注册表（子代理归属）", () => {
     root.emit("agent/status", { agent: child, status: "idle" });
     // 两跳判定的产物只有 kind 能区分：`done` 会让每个子代理都伪装成用户的主任务。
     await pollUntil(() => countKind("subagent-done") === 1, "子代理完成通知落史");
+    expect(countKind("done")).toBe(0);
+    await unmount();
+  });
+
+  it("rc3：agents.isOwnedBy 已删除时经 subagents 树关系判定直接父，不抛 TypeError 且不丢完成通知", async () => {
+    const parent = fakeAgent("itest-rc3-parent");
+    const events: SessionEvent[] = [];
+    const child = fakeAgent("itest-rc3-child", events, { parentSession: "itest-rc3-parent" });
+    const { root, unmount } = await mount({
+      services: {
+        agents: fakeAgentsRc3(parent, child),
+        subagents: fakeSubagents(parent, child),
+      },
+    });
+
+    root.emit("agent/status", { agent: child, status: "running" });
+    events.push(turnEndEvent(1, "completed"));
+    root.emit("agent/status", { agent: child, status: "idle" });
+    await pollUntil(() => countKind("subagent-done") === 1, "rc3 子代理完成通知落史");
     expect(countKind("done")).toBe(0);
     await unmount();
   });

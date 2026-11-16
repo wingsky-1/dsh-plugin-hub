@@ -710,6 +710,80 @@ export function pillPlacement(input: PillPlacementInput): ViewportPoint {
   );
 }
 
+/** Window Controls Overlay 的最小读口（Chromium 桌面 PWA / Electron 提供）。 */
+export interface WindowControlsOverlayPort {
+  readonly visible?: boolean;
+  readonly getTitlebarAreaRect?: () => {
+    readonly left: number;
+    readonly top: number;
+    readonly right: number;
+    readonly bottom: number;
+  };
+}
+
+interface TitlebarAvoidanceInput {
+  /** 只有对话容器缺失、回退到 document.body 时才避让（对话页布局由宿主自己让位）。 */
+  bodyFallback: boolean;
+  /** clamp 后的胶囊左上角与尺寸。 */
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  viewportHeight: number;
+  overlay: WindowControlsOverlayPort | undefined;
+}
+
+/**
+ * 非对话页 body 回退时避让窗口控制按钮（#1195）：仅当 WCO 可见、标题栏区域有效且与
+ * 胶囊相交时下压到标题栏下缘 +4，并受视口底部 clamp 约束；其余情况原样返回。
+ */
+export function titlebarAvoidedTop(input: TitlebarAvoidanceInput): number {
+  if (!input.bodyFallback) return input.top;
+  const area = visibleTitlebarArea(input.overlay);
+  if (area === undefined || !intersectsTitlebar(input, area)) return input.top;
+  const viewportLimit = Math.max(6, input.viewportHeight - input.height - 6);
+  return Math.min(area.bottom + 4, viewportLimit);
+}
+
+interface TitlebarArea {
+  readonly left: number;
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+}
+
+function visibleTitlebarArea(
+  overlay: WindowControlsOverlayPort | undefined,
+): TitlebarArea | undefined {
+  if (overlay?.visible !== true) return undefined;
+  try {
+    const rect = overlay.getTitlebarAreaRect?.();
+    return rect !== undefined && validTitlebarArea(rect) ? rect : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function validTitlebarArea(area: TitlebarArea): boolean {
+  return (
+    Number.isFinite(area.left) &&
+    Number.isFinite(area.top) &&
+    Number.isFinite(area.right) &&
+    Number.isFinite(area.bottom) &&
+    area.right > area.left &&
+    area.bottom > area.top
+  );
+}
+
+function intersectsTitlebar(input: TitlebarAvoidanceInput, area: TitlebarArea): boolean {
+  return (
+    input.left < area.right &&
+    input.left + input.width > area.left &&
+    input.top < area.bottom &&
+    input.top + input.height > area.top
+  );
+}
+
 /**
  * 挂载浮窗：胶囊继续挂在会话滚动容器（scrollBody）内并钉住右上角，下拉面板
  * fixed 跟随。返回 disposer 函数。
@@ -789,8 +863,19 @@ export function mountFloat(ctx: McpClientContext, state: McpState, actions: UiAc
       viewportW: window.innerWidth,
       viewportH: window.innerHeight,
     });
+    const overlay = (navigator as Navigator & { windowControlsOverlay?: WindowControlsOverlayPort })
+      .windowControlsOverlay;
+    const top = titlebarAvoidedTop({
+      bodyFallback: best === document.body,
+      left: point.x,
+      top: point.y,
+      width: pill.offsetWidth,
+      height: pill.offsetHeight,
+      viewportHeight: window.innerHeight,
+      overlay,
+    });
     pill.style.left = `${Math.round(point.x)}px`;
-    pill.style.top = `${Math.round(point.y)}px`;
+    pill.style.top = `${Math.round(top)}px`;
     pill.style.right = "auto";
     if (state.floatOpen) placePanel(state);
   };

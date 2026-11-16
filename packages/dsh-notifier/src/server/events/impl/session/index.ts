@@ -73,7 +73,26 @@ export function isSubagentOf(agent: Agent, agents: AgentRegistryPort): boolean {
   if (parentId === undefined) return false;
   const parent = agents.lookup(parentId);
   if (!parent.found) return false;
-  return agents.isOwnedBy(agent.id, parent.agent);
+  // rc1 / rc2 有官方 isOwnedBy；rc3 删除了它，改由 ctx.subagents 的树关系判定。两代都按「拿不准就
+  // 主任务」收口——多报一条 done 可以接受，把用户自己的 fork 当子代理静默掉不行。
+  if (typeof agents.isOwnedBy === "function") return agents.isOwnedBy(agent.id, parent.agent);
+  return isDirectChildOf(agent, parent.agent, agents.subagents);
+}
+
+/** rc3 回退：同一棵子代理树里，child 的名字父项就是 owner 的自身名字即直接父子。 */
+function isDirectChildOf(
+  child: Agent,
+  owner: Agent,
+  subagents: AgentRegistryPort["subagents"],
+): boolean {
+  if (subagents === undefined) return false;
+  try {
+    if (subagents.rootOf(child) !== subagents.rootOf(owner)) return false;
+    return subagents.namesOf(child).parent === subagents.namesOf(owner).self;
+  } catch {
+    // rootOf / namesOf 在调用者没有活跃运行时归属时会抛错；这里只做归属提示，不能打断通知主流程。
+    return false;
+  }
 }
 
 /** `reason.kind` 的运行时取值；拿不到字符串就按空值处理。 */

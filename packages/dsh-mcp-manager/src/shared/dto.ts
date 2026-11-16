@@ -12,7 +12,7 @@
 import type { McpScope, McpServerStatus } from "./service.ts";
 
 /**
- * 某服务器的实时摘要（服务查询面）：ctx.mcpManager.getStatus / list 的返回形态。
+ * 某服务器的实时摘要（服务查询面）：ctx.wsMcpManager.getStatus / list 的返回形态。
  * 它是服务 ABI 的一部分——字段增减即跨插件契约变更，消费方编译期可见。
  */
 export interface McpServerSummary {

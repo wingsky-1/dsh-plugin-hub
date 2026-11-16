@@ -26,6 +26,14 @@ const UNINSTALLED: StateDeps = {
     isOwnedBy: () => {
       throw new Error(NOT_INSTALLED);
     },
+    subagents: {
+      rootOf: () => {
+        throw new Error(NOT_INSTALLED);
+      },
+      namesOf: () => {
+        throw new Error(NOT_INSTALLED);
+      },
+    },
   },
 };
 

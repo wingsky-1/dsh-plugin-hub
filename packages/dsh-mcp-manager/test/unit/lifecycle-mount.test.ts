@@ -21,6 +21,7 @@ import type { ServerConfig } from "../../src/server/config/impl/model/type.ts";
 import { withTimeout } from "../../src/server/pipeline/impl/timeout/index.ts";
 import {
   bindHost,
+  CONNECT_TIMEOUT_MS,
   DEFAULT_TOOL_CALL_TIMEOUT_MS,
   OFFICIAL_MCP_CLIENT_LOG_NAME,
   OFFICIAL_MCP_CLIENT_SPECIFIER,
@@ -168,6 +169,7 @@ describe("官方 Config 映射（设计 §2.1 逐字段表）", () => {
       env: {},
       cwd: "",
       toolCallTimeoutMs: DEFAULT_TOOL_CALL_TIMEOUT_MS,
+      startupTimeoutMs: CONNECT_TIMEOUT_MS,
       reconnect: {},
       failOnStartupError: false,
     });
@@ -186,6 +188,7 @@ describe("官方 Config 映射（设计 §2.1 逐字段表）", () => {
       url: "https://example.test/mcp",
       headers: {},
       toolCallTimeoutMs: DEFAULT_TOOL_CALL_TIMEOUT_MS,
+      startupTimeoutMs: CONNECT_TIMEOUT_MS,
       reconnect: {},
       failOnStartupError: false,
     });
@@ -279,6 +282,7 @@ function registerMountSuccessPathCases() {
         env: {},
         cwd: "",
         toolCallTimeoutMs: DEFAULT_TOOL_CALL_TIMEOUT_MS,
+        startupTimeoutMs: CONNECT_TIMEOUT_MS,
         reconnect: {},
         failOnStartupError: false,
       },

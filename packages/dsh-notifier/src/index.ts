@@ -3,7 +3,7 @@
  * 交付的是能力对象而非装配期快照——设置是活的，快照看起来与实时读取一模一样。
  */
 import type { Context } from "@deepseek-ai/cordis";
-import type {} from "@deepseek-ai/dsh-agent";
+import type { Agent } from "@deepseek-ai/dsh-agent";
 import type {
   LOCALE_SETTINGS_NAMESPACE as HostLocaleNamespace,
   LOCALE_PREFERENCE_FIELD as HostLocalePreferenceField,
@@ -164,6 +164,9 @@ function bindHost(ctx: Context): HostPort {
 
   const remoteAdmission = liveConnectionAdmission(ctx);
   const remotePeerAdmission = liveConnectionPeerAdmission(ctx);
+  type LegacyOwnership = Pick<AgentRegistryPort, "isOwnedBy">;
+  const officialAgents = ctx.get("agents", false) as unknown as LegacyOwnership | undefined;
+  const officialIsOwnedBy = officialAgents?.isOwnedBy;
 
   return {
     logger: ctx.logger,
@@ -261,12 +264,20 @@ function bindHost(ctx: Context): HostPort {
         ),
     },
     // 宿主 agent 注册表：子代理归属判定的第二个信号。查不到与查得到分开报，怎么理解是域的事。
+    // rc3 已删除 `agents.isOwnedBy`，故这里 duck-type；缺位时由 rc3 的 `subagents` 树关系回退。
     agents: {
       lookup: (id) => {
         const agent = ctx.get("agents", false)?.get(id);
         return agent === undefined ? { found: false } : { found: true, agent };
       },
-      isOwnedBy: (id, owner) => ctx.get("agents", false)?.isOwnedBy(id, owner) === true,
+      // rc3 没有 isOwnedBy：不暴露这个可选方法，域才会走 subagents 回退，而不是收到一个恒 false 的假探针。
+      ...(typeof officialIsOwnedBy === "function"
+        ? {
+            isOwnedBy: (id: Parameters<AgentRegistryPort["lookup"]>[0], owner: Agent) =>
+              officialIsOwnedBy.call(officialAgents, id, owner) === true,
+          }
+        : {}),
+      subagents: ctx.get("subagents", false) as AgentRegistryPort["subagents"],
     },
   };
 }

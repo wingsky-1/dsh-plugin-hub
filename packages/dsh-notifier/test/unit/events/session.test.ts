@@ -230,4 +230,80 @@ describe("isSubagentOf：子代理归属判定", () => {
     const registry = makeAgentRegistry({ live: [parent], owned: [["sub-owned", "p-owner"]] });
     expect(isSubagentOf(child, registry)).toBe(true);
   });
+
+  it("rc3：isOwnedBy 缺位时用 subagents 的树关系判直接父，不抛 TypeError", () => {
+    const child = makeAgent("sub-rc3", { header: { parentSession: "p-rc3" } });
+    const parent = makeAgent("p-rc3");
+    const registry = makeAgentRegistry({
+      live: [parent],
+      legacyOwnership: false,
+      subagents: {
+        rootOf: () => parent,
+        namesOf: (agent) => (agent === child ? { self: "kid", parent: "lead" } : { self: "lead" }),
+      },
+    });
+    expect(isSubagentOf(child, registry)).toBe(true);
+  });
+
+  it("rc3：跨树同名（两个 lead）不算直接父", () => {
+    const child = makeAgent("sub-other-tree", { header: { parentSession: "p-other-tree" } });
+    const parent = makeAgent("p-other-tree");
+    const elsewhere = makeAgent("tree-b");
+    const registry = makeAgentRegistry({
+      live: [parent],
+      legacyOwnership: false,
+      subagents: {
+        rootOf: (agent) => (agent === child ? elsewhere : parent),
+        namesOf: (agent) => (agent === child ? { self: "kid", parent: "lead" } : { self: "lead" }),
+      },
+    });
+    expect(isSubagentOf(child, registry)).toBe(false);
+  });
+
+  it("rc3：名字父项指向别的成员时不是直接父", () => {
+    const child = makeAgent("sub-grandchild", { header: { parentSession: "p-grand" } });
+    const owner = makeAgent("p-grand");
+    const registry = makeAgentRegistry({
+      live: [owner],
+      legacyOwnership: false,
+      subagents: {
+        rootOf: () => owner,
+        namesOf: (agent) =>
+          agent === child ? { self: "kid", parent: "middle" } : { self: "lead" },
+      },
+    });
+    expect(isSubagentOf(child, registry)).toBe(false);
+  });
+
+  it("rc3：rootOf / namesOf 抛错时按主任务处理，不把异常抛进事件链", () => {
+    const child = makeAgent("sub-throws", { header: { parentSession: "p-throws" } });
+    const parent = makeAgent("p-throws");
+    const registry = makeAgentRegistry({
+      live: [parent],
+      legacyOwnership: false,
+      subagents: {
+        rootOf: () => {
+          throw new Error("UNAUTHORIZED");
+        },
+        namesOf: () => {
+          throw new Error("UNAUTHORIZED");
+        },
+      },
+    });
+    expect(isSubagentOf(child, registry)).toBe(false);
+  });
+
+  it("rc1 / rc2：isOwnedBy 在场时优先，rc3 回退不参与", () => {
+    const child = makeAgent("sub-legacy", { header: { parentSession: "p-legacy" } });
+    const parent = makeAgent("p-legacy");
+    const registry = makeAgentRegistry({
+      live: [parent],
+      owned: [],
+      subagents: {
+        rootOf: () => parent,
+        namesOf: (agent) => (agent === child ? { self: "kid", parent: "lead" } : { self: "lead" }),
+      },
+    });
+    expect(isSubagentOf(child, registry)).toBe(false);
+  });
 });

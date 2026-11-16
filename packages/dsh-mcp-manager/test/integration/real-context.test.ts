@@ -34,7 +34,7 @@ import { fakeLoaderPort, pollUntil, tempDshHome } from "../helpers.ts";
 // 入口的声明合并必须让消费方按包名取到服务类型面：声明合并搬出入口、或键改成别的字面量，这条先红。
 // 本文件不带 @ts-nocheck，故 service-contract-wiring 的 tsc 面真的会编译它（与那两包同口径）。
 type Assert<T extends true> = T;
-type EntryFace = Context["mcpManager"];
+type EntryFace = Context["wsMcpManager"];
 type EntryDeclaresService = Assert<
   EntryFace extends McpManagerService ? (McpManagerService extends EntryFace ? true : false) : false
 >;
@@ -269,7 +269,7 @@ describe("组合根：宿主上下文只到组合根", () => {
     // 作用域派发：从组合根所在的 fiber 发，作用域才与本插件的订阅匹配。
     fiber.ctx.emit("agent/pre-step", payload, next);
     expect(seen).toEqual(["itest-agent"]);
-    expect(root.get("mcpManager", false)).toBeUndefined();
+    expect(root.get("wsMcpManager", false)).toBeUndefined();
 
     off();
     fiber.ctx.emit("agent/pre-step", payload, next);

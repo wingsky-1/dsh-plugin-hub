@@ -3,7 +3,6 @@
  * 普通事件同步对账，只有 session 发布重入可在栈后重试一次。
  */
 import type { AgentFace } from "../../../shared/interface.ts";
-import type { ProjectUnit } from "../../../connection/runtime/interface.ts";
 import type { StartAgentVisibilityArgs } from "../../interface.ts";
 
 /** 注册名的前缀（与 server/shared/tool-names.ts 的唯一派生点同源，这里只读不造名）。 */
@@ -24,11 +23,11 @@ function keyOf(names: readonly string[]): string {
   return [...names].sort().join("\n");
 }
 
-/** deny 双层名单：全名单是记忆 key 与收敛判据的来源，批量层是其中 id 命中单元的子集。 */
+/** deny 双层名单：全名单是记忆 key 与收敛判据的来源，批量层是 own 集合收窄后的整批。 */
 interface DenyLists {
-  /** 注册面全部形状良好的 `mcp__` 前缀名（排序后；`ws_mcp_*` 与畸形名已排除）。 */
+  /** 注册面中本插件 own 集合命中的 `mcp__` 名（排序后；官方名、`ws_mcp_*` 与畸形名已排除）。 */
   deny: string[];
-  /** 其中 id 段属于连接池单元表的名字（排序后；批量直挂层）。 */
+  /** 批量直挂层：名单已按 own 集合收窄，整批挂载。 */
   batched: string[];
 }
 
@@ -49,36 +48,27 @@ function isUnknownNameError(error: unknown): boolean {
 }
 
 /**
- * 从**活注册面**现算 deny 名单（#922 方案 B：注册表优先）：注册名以 `mcp__` 开头且形状良好
- * （`mcp__<id>__<tool>` 三段非空）即进名单，不再要求其 id 同刻属于连接池单元——连接翻转期
- * （先销工具后清账本，或先注册工具后回填 id）两边必然错位，交集口径会在此时系统性偏向泄漏
- * （`mcp__*` 进 SDK 文本，见 #922）。单元表只做分级参考：id 命中的进批量层直挂，其余走逐名
- * 挂载（挂载时已销的逐名跳过）。`ws_mcp_*` 四原子不是 `mcp__` 前缀，天然不在名单里。
+ * 从**活注册面**现算 deny 名单：只收 own 集合命中的 `mcp__<id>__<tool>`。官方/兄弟插件
+ * 直接装载的 `mcp__<serverName>__<tool>` 与 `ws_mcp_*` 四原子都保持模型可见。own 集合由
+ * 装载路径在实例出现时登记，不依赖 `units` 交集——连接翻转期（先销工具后清账本，或先注册
+ * 工具后回填 id）两边会错位，交集口径会系统性偏向泄漏（#922）。名单整体批量挂载，失败时
+ * 仍按逐名回退。
  */
 function collectDenyNames(
-  units: ReadonlyMap<string, ProjectUnit>,
+  isOwnedServerId: (id: string) => boolean,
   registeredNames: () => readonly string[],
 ): DenyLists {
-  const ids = new Set<string>();
-  for (const unit of units.values()) {
-    for (const entry of unit.connections.values()) {
-      // 虚拟连接单元（toolDefinitions）没有宿主注册名，entry.id 恒 undefined。
-      if (typeof entry.id === "string" && entry.id !== "") ids.add(entry.id);
-    }
-  }
   const deny = new Set<string>();
   for (const name of registeredNames()) {
     if (typeof name !== "string" || !name.startsWith(MCP_PREFIX)) continue;
     const rest = name.slice(MCP_PREFIX.length);
     const separator = rest.indexOf(ID_SEPARATOR);
     if (separator <= 0 || separator + ID_SEPARATOR.length >= rest.length) continue;
+    if (!isOwnedServerId(idOf(name))) continue;
     deny.add(name);
   }
   const sorted = [...deny].sort();
-  return {
-    deny: sorted,
-    batched: sorted.filter((name) => ids.has(idOf(name))),
-  };
+  return { deny: sorted, batched: sorted };
 }
 
 /** 逆序清理；失败的句柄留下，兼容先 undo 再 notify 抛错的幂等摘除器。 */
@@ -139,7 +129,7 @@ function mountDenyList(
  * @param args 组合根按调用实参递进来的全部输入（本域没有端口持有者，也没有第二处取数路径）。
  */
 export function startAgentVisibility(args: StartAgentVisibilityArgs): () => void {
-  const { events, units, registeredNames, logger } = args;
+  const { events, isOwnedServerId, registeredNames, logger } = args;
   const live = new Map<string, AgentRecord>();
   const retired = new Set<AgentRecord>();
   // true 允许重新挂载；false 只补清理，不把普通挂载失败变成自动重试。
@@ -177,7 +167,7 @@ export function startAgentVisibility(args: StartAgentVisibilityArgs): () => void
 
   const readLists = (): DenyLists | undefined => {
     try {
-      return collectDenyNames(units, registeredNames);
+      return collectDenyNames(isOwnedServerId, registeredNames);
     } catch (error) {
       warnDegraded(
         `dsh-mcp-manager: 读取工具注册面失败，模型可见面隐藏降级为 no-op（mcp__* 保持可见）：${String(error)}`,

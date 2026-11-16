@@ -7,7 +7,7 @@
 
 import type { ServerConfig } from "../../../../config/interface.ts";
 import type { ServerState } from "../../../../../shared/interface.ts";
-import type { MountedPlugin } from "../../../../shared/interface.ts";
+import type { McpConnectionStatusHandle, MountedPlugin } from "../../../../shared/interface.ts";
 
 /** 连接池条目（每工作空间一套）。 */
 export interface ProjectUnit {
@@ -44,6 +44,10 @@ export interface ConnectionEntry {
   readySettled: boolean;
   /** 本代际是否曾进入 connected（区分「首连就没成功」与「连上过又掉线」）。 */
   everConnected: boolean;
+  /** 官方实例的连接状态句柄（内部嫁接；旧宿主/夹具没有该面时保持 undefined）。 */
+  connectionStatus?: McpConnectionStatusHandle;
+  /** 官方状态订阅的释放器；拆除或换代时调用。 */
+  statusUnsubscribe?: () => void;
   /** 代际断开清理。 */
   disposed: boolean;
 }

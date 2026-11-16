@@ -57,6 +57,9 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
   // 装配段（ctx 的 register/on 面 + 目录投影 host + register 带 disabledTools）上提为具名工厂
   // makeDisableHostFixture，it 回调只留断言；实参与调用顺序逐字不变。
   const { mw, guard, dispose } = await makeDisableHostFixture(map, catalogTempDirs);
+  // 共存边界：直呼裁决只认本插件 own id；夹具显式登记两条本地 server。
+  mw.ownServerId("ctx");
+  mw.ownServerId("gctx");
   expect(typeof guard === "function", "pre-execute guard 已注册").toBeTruthy();
   const deny = await guard!(
     {

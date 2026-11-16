@@ -10,7 +10,7 @@
  *   C3 闭包形状（export 星展开、循环截断、.ts 归一）与双版本 exit2；
  *   F4 注释样例（trend.ts:16 形）零派生，证 AST（grep 会误报）；
  *   C1 多行 ctx.on 收齐机制；S1 双动态与 S3 级联反向；R2、R4-lite 缺失反向。
- * 真实仓库锚：脚本 exit 0（只 warn 不阻塞）、S1 为 0、S2 为具名 7 项、C1 为 18，R2 允许 OK 或已知 system-prompt warning。
+ * 真实仓库锚：脚本 exit 0（只 warn 不阻塞）、S1 为 0、S2 为具名 8 项、C1 为 18，R2 允许 OK 或已知 system-prompt warning。
  * C1 由 19 降到 18：#1014 B4 把 mcp-manager 的两条 pre-execute 注册（registerMiddlewareTools
  * 内那条 + 独立的 registerDirectMcpGuard）合并成一条，仓内 ctx.on( 字面量少了一个。
  * 这是同一事实的计数变化，不是判据放宽——数字仍被逐字钉住，且合并本身另有
@@ -454,7 +454,7 @@ test("真实仓库锚：脚本 exit 0（只 warn 不阻塞）", () => {
   assert.equal(r.status, 0, String(r.stderr).slice(0, 500));
 });
 
-test("真实仓库锚：S1 为 0、S2 为 7、C1 为 18，R2 已知 warning 显式保留", () => {
+test("真实仓库锚：S1 为 0、S2 为 8、C1 为 18，R2 已知 warning 显式保留", () => {
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0);
   const out = String(r.stdout) + String(r.stderr);
@@ -469,11 +469,11 @@ test("真实仓库锚：S1 为 0、S2 为 7、C1 为 18，R2 已知 warning 显�
   assert.ok(out.includes("R4-lite 方法 OK"));
 });
 
-test("真实仓库锚：S2 校准后 7 名全绿（loopback 合并后）", () => {
+test("真实仓库锚：S2 校准后 8 名全绿（rc3 subagents）", () => {
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0);
   const out = String(r.stdout) + String(r.stderr);
-  assert.ok(out.includes("S2 无类型服务 7（基线 8"));
+  assert.ok(out.includes("S2 无类型服务 8（基线 8"));
   for (const name of [
     "attachments",
     "configForms",
@@ -482,6 +482,7 @@ test("真实仓库锚：S2 校准后 7 名全绿（loopback 合并后）", () =>
     "locale",
     "sessionProjections",
     "slots",
+    "subagents",
   ]) {
     assert.ok(out.includes(name) && out.includes("跟踪："), name);
   }
@@ -493,7 +494,7 @@ test("真实仓库锚：S2 校准后 7 名全绿（loopback 合并后）", () =>
     .filter((line) => !line.includes("R2-cordis 事件 FAIL"))
     .join("\n");
   assert.ok(!withoutKnownR2.includes("::warning::"));
-  assert.ok(out.includes("S2 无类型服务 7") && out.includes("）OK"));
+  assert.ok(out.includes("S2 无类型服务 8") && out.includes("）OK"));
   assert.ok(out.includes("R1 服务 OK"));
 });
 

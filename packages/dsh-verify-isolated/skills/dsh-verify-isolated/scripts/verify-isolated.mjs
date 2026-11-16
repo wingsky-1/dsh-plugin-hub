@@ -23,7 +23,7 @@
  *                            [--no-build] [--evidence-dir <dir>] [--audit]
  *                            [--audit-extra-dirs <dir>] [--no-skip-onboarding]
  *                            [--probe-provider-usage] [--json] [-- <pkg-path>...]
- *   dsh 入口     从 PATH 解析 `dsh`，要求 `dsh --version` 为 0.2.2-rc.1。找不到、
+ *   dsh 入口     从 PATH 解析 `dsh`，要求 `dsh --version` 为 0.2.2-rc.3。找不到、
  *                不可用、读取失败或其它版本一律 fail-closed，避免产出不属于目标
  *                runtime 的 preset/验证证据。
  *   --port <port>      默认 3456；--port 0 自动探测真实空闲端口并打印（修复打印 0）。
@@ -165,7 +165,7 @@ import { initProfileAndBundles, setupPlugins } from "./lib/plugin-setup.mjs";
 const SCRIPT_DIR = import.meta.dirname; // Node >= 22 全程可用
 const DRIVER = join(SCRIPT_DIR, "browser-driver.mjs");
 // 目标 runtime 单版锚定（精确版本，不放宽成 semver range）。
-const TARGET_DSH_VERSION = "0.2.2-rc.1";
+const TARGET_DSH_VERSION = "0.2.2-rc.3";
 const READY_TIMEOUT_MS = 15000;
 const URL_WAIT_MS = 5000; // 访问 URL 行晚于 HTTP 就绪的等待上限（见 9b 注释）
 const LOG_TAIL_LIMIT = 4096; // 防背压：收集缓冲限长（browser-driver stderrBuf 先例）

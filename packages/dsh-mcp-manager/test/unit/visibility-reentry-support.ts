@@ -6,7 +6,7 @@ import {
   fakeAgent,
   flakyAgent,
   makeEvents,
-  unitsWith,
+  ownedIds,
   makeLogger,
 } from "./visibility-test-support.ts";
 
@@ -37,7 +37,7 @@ function registerReplacementCases() {
     };
     const stop = startAgentVisibility({
       events: events.port,
-      units: unitsWith("x"),
+      isOwnedServerId: ownedIds("x"),
       registeredNames: () => names,
       logger: makeLogger(),
     });
@@ -76,7 +76,7 @@ function registerReplacementCases() {
     };
     const stop = startAgentVisibility({
       events: events.port,
-      units: unitsWith("x"),
+      isOwnedServerId: ownedIds("x"),
       registeredNames: () => names,
       logger: makeLogger(),
     });
@@ -98,7 +98,7 @@ function registerFirstMountLifecycleCases() {
     const logger = makeLogger();
     const stop = startAgentVisibility({
       events: events.port,
-      units: unitsWith("x"),
+      isOwnedServerId: ownedIds("x"),
       registeredNames: () => ["mcp__x__one"],
       logger,
     });
@@ -122,7 +122,7 @@ function registerFirstMountLifecycleCases() {
     const log: string[] = [];
     const stop = startAgentVisibility({
       events: events.port,
-      units: unitsWith("x"),
+      isOwnedServerId: ownedIds("x"),
       registeredNames: () => ["mcp__x__one"],
       logger: makeLogger(),
     });
@@ -151,7 +151,7 @@ function registerFirstMountLifecycleCases() {
     const logger = makeLogger();
     const stop = startAgentVisibility({
       events: events.port,
-      units: unitsWith("x"),
+      isOwnedServerId: ownedIds("x"),
       registeredNames: () => names,
       logger,
     });
@@ -181,7 +181,7 @@ function registerRetryLimitCases() {
     const logger = makeLogger();
     const stop = startAgentVisibility({
       events: events.port,
-      units: unitsWith("x"),
+      isOwnedServerId: ownedIds("x"),
       registeredNames: () => names,
       logger,
     });
@@ -212,7 +212,7 @@ function registerRetryLimitCases() {
     });
     const stop = startAgentVisibility({
       events: events.port,
-      units: unitsWith("x"),
+      isOwnedServerId: ownedIds("x"),
       registeredNames: () => ["mcp__x__one"],
       logger,
     });
@@ -234,7 +234,7 @@ function registerRetryLimitCases() {
     });
     const stop = startAgentVisibility({
       events: events.port,
-      units: unitsWith("x"),
+      isOwnedServerId: ownedIds("x"),
       registeredNames: () => ["mcp__x__one"],
       logger,
     });
@@ -254,7 +254,10 @@ export function registerFirstMountReentryCases() {
 }
 
 /** 模拟宿主层先变更再通知、挂载通知失败时撤销并再次通知；不模拟 visibility 的决策。 */
-function restrictionHost(id: string, notify: (kind: string, handle: number) => void = () => {}) {
+function restrictionHost(
+  id: string,
+  notify: (kind: string, handle: number, names: readonly string[]) => void = () => {},
+) {
   const layers = new Map<number, string[]>();
   const disposed: number[] = [];
   let mounts = 0;
@@ -263,23 +266,32 @@ function restrictionHost(id: string, notify: (kind: string, handle: number) => v
     tools: {
       restrict(filter: ToolRestriction) {
         const handle = ++mounts;
-        layers.set(handle, [...(filter.deny ?? [])]);
+        const names = [...(filter.deny ?? [])];
+        layers.set(handle, names);
         try {
-          notify("mount", handle);
+          notify("mount", handle, names);
         } catch (error) {
           layers.delete(handle);
-          notify("rollback", handle);
+          notify("rollback", handle, names);
           throw error;
         }
         return () => {
           layers.delete(handle);
           disposed.push(handle);
-          notify("dispose", handle);
+          notify("dispose", handle, names);
         };
       },
     },
   };
   return { face, layers, disposed, mounts: () => mounts };
+}
+
+/** 宿主 `restrict` 的未知名字错误原文案：批量层命中时驱动逐名回退。 */
+function unknownName(names: readonly string[]): Error {
+  return new Error(
+    `tools.restrict() names unknown global tool ${JSON.stringify(names[0])}; ` +
+      "known global tools: mcp__x__one",
+  );
 }
 
 function registerCleanupNotificationCases() {
@@ -290,7 +302,7 @@ function registerCleanupNotificationCases() {
     const b = restrictionHost("b");
     const stop = startAgentVisibility({
       events: { ...events.port, onToolsChange: undefined },
-      units: unitsWith("x"),
+      isOwnedServerId: ownedIds("x"),
       registeredNames: () => names,
       logger: makeLogger(),
     });
@@ -312,7 +324,7 @@ function registerCleanupNotificationCases() {
     });
     const stop = startAgentVisibility({
       events: events.port,
-      units: unitsWith("x"),
+      isOwnedServerId: ownedIds("x"),
       registeredNames: () => names,
       logger: makeLogger(),
     });
@@ -341,7 +353,7 @@ function registerCleanupNotificationCases() {
     });
     const stop = startAgentVisibility({
       events: events.port,
-      units: unitsWith("x"),
+      isOwnedServerId: ownedIds("x"),
       registeredNames: () => names,
       logger: makeLogger(),
     });
@@ -370,7 +382,7 @@ function registerNestedLifecycleCases() {
     });
     const stop = startAgentVisibility({
       events: events.port,
-      units: unitsWith("x"),
+      isOwnedServerId: ownedIds("x"),
       registeredNames: () => ["mcp__x__one"],
       logger: makeLogger(),
     });
@@ -398,7 +410,7 @@ function registerNestedLifecycleCases() {
     live.push(a.face, b.face);
     const stop = startAgentVisibility({
       events: events.port,
-      units: unitsWith("x"),
+      isOwnedServerId: ownedIds("x"),
       registeredNames: () => ["mcp__x__one"],
       logger: makeLogger(),
     });
@@ -413,13 +425,14 @@ function registerRollbackAndStopCases() {
   it("partial mount 回滚清理失败保留句柄，发布结束后重新挂全并清理", async () => {
     const events = makeEvents();
     let publishing = true;
-    const host = restrictionHost("a", (kind, handle) => {
-      if (publishing && ((kind === "mount" && handle === 2) || kind === "dispose"))
+    const host = restrictionHost("a", (kind, _handle, names) => {
+      if (kind === "mount" && names.length > 1) throw unknownName(names);
+      if (publishing && ((kind === "mount" && names[0] === "mcp__x__two") || kind === "dispose"))
         throw new Error(reentry);
     });
     const stop = startAgentVisibility({
       events: events.port,
-      units: unitsWith(),
+      isOwnedServerId: ownedIds("x"),
       registeredNames: () => ["mcp__x__one", "mcp__x__two"],
       logger: makeLogger(),
     });
@@ -427,9 +440,9 @@ function registerRollbackAndStopCases() {
     expect(host.layers.size).toBe(0);
     publishing = false;
     await Promise.resolve();
-    expect(host.mounts()).toBe(4);
+    expect(host.mounts()).toBe(6);
     expect([...host.layers.values()]).toEqual([["mcp__x__one"], ["mcp__x__two"]]);
-    expect(host.disposed).toEqual([1, 1]);
+    expect(host.disposed).toEqual([2, 2]);
     stop();
     expect(host.layers.size).toBe(0);
   });
@@ -445,7 +458,7 @@ function registerRollbackAndStopCases() {
     const names = ["mcp__x__one"];
     const stop = startAgentVisibility({
       events: events.port,
-      units: unitsWith("x"),
+      isOwnedServerId: ownedIds("x"),
       registeredNames: () => names,
       logger,
     });
@@ -468,8 +481,9 @@ function registerOrdinaryCleanupCases() {
     const events = makeEvents();
     let failCleanup = true;
     const logger = makeLogger();
-    const host = restrictionHost("a", (kind, handle) => {
-      if (kind === "mount" && handle === 2) throw new Error("ordinary mount failure");
+    const host = restrictionHost("a", (kind, _handle, names) => {
+      if (kind === "mount" && names.length > 1) throw unknownName(names);
+      if (kind === "mount" && names[0] === "mcp__x__two") throw new Error("ordinary mount failure");
       if (kind === "dispose" && failCleanup) {
         failCleanup = false;
         throw new Error("ordinary cleanup failure");
@@ -477,14 +491,14 @@ function registerOrdinaryCleanupCases() {
     });
     const stop = startAgentVisibility({
       events: events.port,
-      units: unitsWith(),
+      isOwnedServerId: ownedIds("x"),
       registeredNames: () => ["mcp__x__one", "mcp__x__two"],
       logger,
     });
     events.handlers.created[0](host.face);
     await Promise.resolve();
-    expect(host.mounts()).toBe(2);
-    expect(host.disposed).toEqual([1, 1]);
+    expect(host.mounts()).toBe(3);
+    expect(host.disposed).toEqual([2, 2]);
     expect(host.layers.size).toBe(0);
     expect(logger.warns).toHaveLength(2);
     stop();
@@ -494,9 +508,14 @@ function registerOrdinaryCleanupCases() {
     const events = makeEvents();
     const names = ["mcp__x__one", "mcp__x__two"];
     let cleanupFailed = false;
-    const host = restrictionHost("a", (kind, handle) => {
+    let mountFailed = false;
+    const host = restrictionHost("a", (kind, _handle, denied) => {
       events.handlers.changed[0]();
-      if (kind === "mount" && handle === 2) throw new Error("ordinary mount failure");
+      if (kind === "mount" && denied.length > 1) throw unknownName(denied);
+      if (kind === "mount" && denied[0] === "mcp__x__two" && !mountFailed) {
+        mountFailed = true;
+        throw new Error("ordinary mount failure");
+      }
       if (kind === "dispose" && !cleanupFailed) {
         cleanupFailed = true;
         throw new Error("ordinary cleanup failure");
@@ -504,15 +523,17 @@ function registerOrdinaryCleanupCases() {
     });
     const stop = startAgentVisibility({
       events: events.port,
-      units: unitsWith(),
+      isOwnedServerId: ownedIds("x"),
       registeredNames: () => names,
       logger: makeLogger(),
     });
     events.handlers.created[0](host.face);
-    expect(host.mounts()).toBe(2);
+    expect(host.mounts()).toBe(3);
     names.push("mcp__x__three");
     events.handlers.changed[0]();
     await Promise.resolve();
+    expect(host.mounts()).toBe(7);
+    expect(host.disposed).toEqual([2, 2]);
     expect([...host.layers.values()]).toEqual([
       ["mcp__x__one"],
       ["mcp__x__three"],

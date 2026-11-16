@@ -11,6 +11,7 @@ import { pollUntil } from "../helpers.ts";
 import type { FakeToolEntry } from "../helpers.ts";
 
 import {
+  OFFICIAL_MODULE,
   loaderScript,
   managerFixture,
   McpStore,
@@ -19,6 +20,8 @@ import {
   quietServer,
   setupManagerTestLifecycle,
 } from "./manager-shape-support.ts";
+import { OFFICIAL_MCP_CLIENT_SPECIFIER } from "../../src/server/shared/interface.ts";
+import type { McpConnectionStatus } from "../../src/server/shared/interface.ts";
 
 import {
   connectGlobal,
@@ -226,10 +229,67 @@ function registerCrossRootResume() {
     expect(unitB.connections.get("b1")).toBe(entryB);
   });
 }
+
+function registerOfficialStatusBridge() {
+  it("官方状态句柄：current/onChange 回写六态与 everConnected，并驱动状态广播", async () => {
+    const specifier = OFFICIAL_MCP_CLIENT_SPECIFIER;
+    const fixture = managerFixture("dsh-mcp-mgr2status-");
+    const modules = loaderScript.modules!;
+    const original = modules[specifier]!;
+    let current: McpConnectionStatus = { state: "connecting" };
+    let listener: ((status: McpConnectionStatus) => void) | undefined;
+    let unsubscribed = 0;
+    const status = {
+      current: () => current,
+      closure: () => ({ closeConfirmed: true }),
+      onChange: (callback: (next: McpConnectionStatus) => void) => {
+        listener = callback;
+        return () => {
+          unsubscribed += 1;
+          listener = undefined;
+        };
+      },
+    };
+    modules[specifier] = { ...OFFICIAL_MODULE, connectionStatusOf: () => status };
+    try {
+      fixture.store.upsert(normalizeServer(quietServer("gs")));
+      await fixture.manager.initMiddleware();
+      const unit = await connectGlobal(fixture.manager, "gs");
+      const entry = unit.connections.get("gs")!;
+      expect(entry.connectionStatus).toBe(status);
+      expect(entry.status).toBe("connecting");
+
+      let broadcasts = 0;
+      const off = fixture.manager.onStatus(() => {
+        broadcasts += 1;
+      });
+      current = { state: "connected", connectedAt: 12345 };
+      listener?.(current);
+      expect(entry.status).toBe("connected");
+      expect(entry.everConnected).toBe(true);
+      expect(entry.connectedAt).toBe(12345);
+      expect(fixture.manager.middleware!.statusOf("@global", "gs")).toBe("connected");
+      await pollUntil("官方状态广播", () => broadcasts > 0);
+
+      current = { state: "failed", lastError: "boom" };
+      listener?.(current);
+      expect(entry.status).toBe("failed");
+      expect(entry.error).toContain("boom");
+
+      fixture.manager.middleware!.releaseConnection("@global", "gs");
+      expect(unsubscribed).toBe(1);
+      expect(listener).toBeUndefined();
+      off();
+    } finally {
+      modules[specifier] = original;
+    }
+  });
+}
 setupManagerTestLifecycle();
 describe("#1120 resume 真实链路接缝", () => {
   registerResumeHooks();
   registerHealthyAndConcurrentResume();
   registerResumeRecovery();
   registerCrossRootResume();
+  registerOfficialStatusBridge();
 });
