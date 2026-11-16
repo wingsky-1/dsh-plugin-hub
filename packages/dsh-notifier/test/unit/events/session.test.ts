@@ -10,7 +10,7 @@ import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import { describe, expect, it } from "vitest";
 
-import { makeAgentRegistry } from "../../helpers.ts";
+import { makeSubagentTree } from "../../helpers.ts";
 import {
   isSubagentOf,
   lastTurnEndOf,
@@ -202,32 +202,31 @@ describe("新增会话事件不改变证据读取语义", () => {
 });
 
 describe("isSubagentOf：子代理归属判定", () => {
-  it("origin 命中即真，不必再问注册表", () => {
+  it("origin 命中即真", () => {
     const agent = makeAgent("sub-origin", { header: { origin: "subagent" } });
-    expect(isSubagentOf(agent, makeAgentRegistry())).toBe(true);
+    expect(isSubagentOf(agent, makeSubagentTree())).toBe(true);
   });
 
   it("没有 parentSession 就是主任务", () => {
     const agent = makeAgent("main-root", { header: {} });
-    expect(isSubagentOf(agent, makeAgentRegistry())).toBe(false);
+    expect(isSubagentOf(agent, makeSubagentTree())).toBe(false);
   });
 
-  it("父 agent 已消亡（查不到）时判主任务：宁可多报一条 done，也不静默用户自己的任务", () => {
-    const agent = makeAgent("fork-orphan", { header: { parentSession: "p-gone" } });
-    expect(isSubagentOf(agent, makeAgentRegistry())).toBe(false);
-  });
-
-  it("父 agent 在册但不拥有它（用户 fork 主线）时判主任务：header 单信号分不开两种 fork", () => {
+  it("普通用户 fork 的 rootOf 仍是自身，不误报为子代理", () => {
     const child = makeAgent("fork-user", { header: { parentSession: "p-live" } });
-    const parent = makeAgent("p-live");
-    const registry = makeAgentRegistry({ live: [parent], owned: [] });
-    expect(isSubagentOf(child, registry)).toBe(false);
+    expect(isSubagentOf(child, makeSubagentTree())).toBe(false);
   });
 
-  it("父 agent 在册且确由它创建时判子代理（运行时归属是唯一可靠的第二个信号）", () => {
-    const child = makeAgent("sub-owned", { header: { parentSession: "p-owner" } });
+  it("DSH 将受管子代理解析到不同的活体根时判子代理", () => {
+    const child = makeAgent("sub-managed", { header: { parentSession: "p-owner" } });
     const parent = makeAgent("p-owner");
-    const registry = makeAgentRegistry({ live: [parent], owned: [["sub-owned", "p-owner"]] });
-    expect(isSubagentOf(child, registry)).toBe(true);
+    const subagents = makeSubagentTree({ roots: [[child, parent]] });
+    expect(isSubagentOf(child, subagents)).toBe(true);
+  });
+
+  it("可选的 subagents 服务缺位时按主任务降级", () => {
+    const child = makeAgent("fork-orphan", { header: { parentSession: "p-gone" } });
+    const unavailable = { rootOf: () => undefined };
+    expect(isSubagentOf(child, unavailable)).toBe(false);
   });
 });

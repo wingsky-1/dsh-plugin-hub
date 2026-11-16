@@ -1,5 +1,5 @@
 /** dsh-notifier events 域 —— agent 状态机自己的形状。 */
-import type { AgentRegistryPort } from "../../deps.ts";
+import type { SubagentTreePort } from "../../deps.ts";
 import type { LoggerPort } from "../../../shared/interface.ts";
 import type { TurnEndEvidence } from "../session/type.ts";
 
@@ -18,7 +18,7 @@ export interface StateDeps {
   /** 日志出口：完成判定跳过的诊断要它（「为什么没发 done」的唯一线索）。 */
   logger: LoggerPort;
   /** 子代理归属判定要它（见 `../session/`）。 */
-  agents: AgentRegistryPort;
+  subagents: SubagentTreePort;
 }
 
 /** 一次 idle 的完成判定结果。 */

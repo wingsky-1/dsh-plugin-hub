@@ -156,7 +156,7 @@ describe("会话内事件：只记账，不产出", () => {
     // 「记账」的唯一可观测出口：idle 判定读的就是这条推送来的证据，没记住就永远判不出完成。
     agentStates.install({
       logger: makeLogger(),
-      agents: { lookup: () => ({ found: false }), isOwnedBy: () => false },
+      subagents: { rootOf: (current) => current },
     });
     agentStates.observeStatus({ agent, status: "running" });
     expect(agentStates.observeStatus({ agent, status: "idle" })).toMatchObject({

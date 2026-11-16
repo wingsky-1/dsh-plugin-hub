@@ -3,7 +3,8 @@
  * 交付的是能力对象而非装配期快照——设置是活的，快照看起来与实时读取一模一样。
  */
 import type { Context } from "@deepseek-ai/cordis";
-import type {} from "@deepseek-ai/dsh-agent";
+import type { Agent } from "@deepseek-ai/dsh-agent";
+import type {} from "@deepseek-ai/dsh-subagent";
 import type {
   LOCALE_SETTINGS_NAMESPACE as HostLocaleNamespace,
   LOCALE_PREFERENCE_FIELD as HostLocalePreferenceField,
@@ -17,7 +18,7 @@ import * as apiApi from "./server/api/interface.ts";
 import * as channelsApi from "./server/channels/interface.ts";
 import * as configApi from "./server/config/interface.ts";
 import * as eventsApi from "./server/events/interface.ts";
-import type { AgentRegistryPort, HostEventPort } from "./server/events/interface.ts";
+import type { HostEventPort, SubagentTreePort } from "./server/events/interface.ts";
 import * as pipelineApi from "./server/pipeline/interface.ts";
 import type { OutgoingFrame } from "./server/pipeline/interface.ts";
 import type { LegacySettingsFace } from "./server/upgrade/deps.ts";
@@ -133,8 +134,8 @@ interface HostPort {
   /** 宿主路由注册口：只有组合根够得着 `ctx.webServer`。 */
   readonly register: (route: WebRoute) => () => void;
   readonly events: HostEventPort;
-  /** 宿主 agent 注册表：子代理归属判定要它。 */
-  readonly agents: AgentRegistryPort;
+  /** DSH 子代理运行时树：只用于从活体 Agent 解析其根。 */
+  readonly subagents: SubagentTreePort;
   /**
    * 宿主 settings 服务：0.2.3 把配置存在那里，新架构搬走后仍需用它作低优先级兜底。
    * 只声明本域要用的 `describe`——正式历史来源由 upgrade 域直接读取 DSH_HOME 双文件。
@@ -260,13 +261,20 @@ function bindHost(ctx: Context): HostPort {
           GLOBAL_LISTEN,
         ),
     },
-    // 宿主 agent 注册表：子代理归属判定的第二个信号。查不到与查得到分开报，怎么理解是域的事。
-    agents: {
-      lookup: (id) => {
-        const agent = ctx.get("agents", false)?.get(id);
-        return agent === undefined ? { found: false } : { found: true, agent };
+    // 官方 rootOf 能区分托管子代理和普通 Session fork；service 可选，缺位/失效时降级为主任务。
+    subagents: {
+      rootOf: (agent) => {
+        try {
+          // 引擎最低 rc.3 已提供 rootOf；catalog 锁定的 rc.1 类型尚无此方法，故只在宿主接缝收窄可选 service。
+          const runtime = ctx.get("subagents", false) as unknown as
+            { rootOf(caller: Agent): Agent } | undefined;
+          return runtime?.rootOf(agent);
+        } catch (cause) {
+          const reason = cause instanceof Error ? cause.message : String(cause);
+          ctx.logger.warn(`dsh-notifier: 子代理归属读取失败 —— ${reason}`);
+          return undefined;
+        }
       },
-      isOwnedBy: (id, owner) => ctx.get("agents", false)?.isOwnedBy(id, owner) === true,
     },
   };
 }
@@ -318,7 +326,7 @@ async function assemble(
   // 4. 事件：请求一律产出，去留由裁决层决定——开关会在本域看不见的地方被改。
   eventsApi.installEvents({
     events: host.events,
-    agents: host.agents,
+    subagents: host.subagents,
     logger: host.logger,
     pipeline: pipelineApi,
     readLocale: host.readLocale,

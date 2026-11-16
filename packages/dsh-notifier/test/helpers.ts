@@ -16,7 +16,7 @@ import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { DeliverResult } from "../src/server/channels/impl/deliver/type.ts";
 import type { RemoteAccessPort } from "../src/server/api/deps.ts";
-import type { AgentRegistryPort } from "../src/server/events/deps.ts";
+import type { SubagentTreePort } from "../src/server/events/deps.ts";
 import type { DeliverReason, LoggerPort } from "../src/server/shared/interface.ts";
 import {
   admitLongLivedRequest,
@@ -211,25 +211,12 @@ export function retryableOf(result: DeliverResult): boolean {
   return result.retryable;
 }
 
-/**
- * 假 Agent 注册表：`live` 是 id → Agent，`owned` 是「子 id + 父 Agent」对。
- *
- * 与 sdk 的 `makeRegister`（种类登记）只差一个字，故这里叫 `makeAgentRegistry`。
- */
-export function makeAgentRegistry(
-  options: { live?: Agent[]; owned?: ReadonlyArray<readonly [string, string]> } = {},
-): AgentRegistryPort {
-  const live = new Map((options.live ?? []).map((agent) => [String(agent.id), agent]));
-  return {
-    lookup: (id) => {
-      const agent = live.get(String(id));
-      return agent === undefined ? { found: false } : { found: true, agent };
-    },
-    isOwnedBy: (id, owner) =>
-      (options.owned ?? []).some(
-        ([child, parent]) => child === String(id) && parent === String(owner.id),
-      ),
-  };
+/** 假 DSH subagent tree：只提供 Agent 到根 Agent 的官方查询结果。 */
+export function makeSubagentTree(
+  options: { roots?: ReadonlyArray<readonly [Agent, Agent]> } = {},
+): SubagentTreePort {
+  const roots = new Map(options.roots ?? []);
+  return { rootOf: (agent) => roots.get(agent) ?? agent };
 }
 
 /** 跨边界喂值：编译期联合不代表运行时的值也在枚举里，守的正是编译期管不到的那一侧。 */

@@ -19,11 +19,8 @@ const NOT_INSTALLED = "dsh-notifier: events 域状态机尚未装配";
 /** 未装配时的占位：真被读到说明装配守卫有洞，当场暴露而不是按空状态判定；日志没人听，静默。 */
 const UNINSTALLED: StateDeps = {
   logger: { warn: () => {} },
-  agents: {
-    lookup: () => {
-      throw new Error(NOT_INSTALLED);
-    },
-    isOwnedBy: () => {
+  subagents: {
+    rootOf: () => {
       throw new Error(NOT_INSTALLED);
     },
   },
@@ -122,7 +119,7 @@ class AgentStateMachine {
     const title = sessionTitleOf(agent);
     return {
       ok: true,
-      kind: isSubagentOf(agent, this.deps.agents) ? "subagent-done" : "done",
+      kind: isSubagentOf(agent, this.deps.subagents) ? "subagent-done" : "done",
       taskTitle: title.found ? title.title : undefined,
       durationMs,
     };

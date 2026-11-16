@@ -14,7 +14,7 @@ import {
   configFile,
   countKind,
   fakeAgent,
-  fakeAgents,
+  fakeSubagents,
   fakeSession,
   fakeSettings,
   fakeWebServer,
@@ -262,7 +262,9 @@ function registerFailureCancellationAndReplay(): void {
       parentSession: "itest-main",
       origin: "subagent",
     });
-    const { root, unmount } = await mount({ services: { agents: fakeAgents(parent, child) } });
+    const { root, unmount } = await mount({
+      services: { subagents: fakeSubagents(parent, child) },
+    });
 
     // 交错到达：父任务 running 期间子代理先完成，然后父任务才完成。
     root.emit("agent/status", { agent: parent, status: "running" });

@@ -7,7 +7,7 @@ import type { Agent } from "@deepseek-ai/dsh-agent";
 import type {} from "@deepseek-ai/dsh-session-title";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import type { TurnEndReason } from "@deepseek-ai/dsh-session/types";
-import type { AgentRegistryPort } from "../../deps.ts";
+import type { SubagentTreePort } from "../../deps.ts";
 import type { SessionTitle, TurnEndRead } from "./type.ts";
 // 截断走包内唯一的 code-point 截断而不是 `String.prototype.slice`：同包 8 个展示出口
 // （bark / webhook / browser / system / pipeline finalize / shared reason）都用它，
@@ -64,16 +64,14 @@ export function lastTurnEndOf(agent: Agent): TurnEndRead {
 }
 
 /**
- * 是否子代理：`origin` 命中即真；否则要运行时归属确凿成立（父 agent 在活体注册表里，
- * 且确由它创建）。任一环不成立都走主任务分支——宁可多报一条 done，不静默用户自己的任务。
+ * 是否子代理：`origin` 命中即真；否则用 DSH 的 rootOf 区分托管子代理与普通 Session fork。
+ * 普通 Agent / 用户 fork 的 root 是自身；归属服务缺位时按主任务分支，不静默用户任务。
  */
-export function isSubagentOf(agent: Agent, agents: AgentRegistryPort): boolean {
+export function isSubagentOf(agent: Agent, subagents: SubagentTreePort): boolean {
   if (agent.session.header.origin === "subagent") return true;
-  const parentId = agent.session.header.parentSession;
-  if (parentId === undefined) return false;
-  const parent = agents.lookup(parentId);
-  if (!parent.found) return false;
-  return agents.isOwnedBy(agent.id, parent.agent);
+  if (agent.session.header.parentSession === undefined) return false;
+  const root = subagents.rootOf(agent);
+  return root !== undefined && root !== agent;
 }
 
 /** `reason.kind` 的运行时取值；拿不到字符串就按空值处理。 */

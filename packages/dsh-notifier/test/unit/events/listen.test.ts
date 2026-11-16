@@ -18,7 +18,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   AgentDisposedPayload,
   AgentErrorPayload,
-  AgentRegistryPort,
+  SubagentTreePort,
   AgentStatusPayload,
   AgentTurnStoppingPayload,
   EventsDeps,
@@ -26,7 +26,7 @@ import type {
   NotifyRequest,
 } from "../../../src/server/events/deps.ts";
 import { installEvents, releaseEvents } from "../../../src/server/events/interface.ts";
-import { makeAgentRegistry, makeLogger } from "../../helpers.ts";
+import { makeSubagentTree, makeLogger } from "../../helpers.ts";
 
 afterEach(() => {
   releaseEvents();
@@ -155,13 +155,13 @@ function makeSession(
 }
 
 /** 装配一次 events 域，交出观测面。 */
-function assemble(options: { agents?: AgentRegistryPort } = {}) {
+function assemble(options: { subagents?: SubagentTreePort } = {}) {
   const events = makeHostEvents();
   const logger = makeLogger();
   const submitted: NotifyRequest[] = [];
   const deps: EventsDeps = {
     events: events.port,
-    agents: options.agents ?? makeAgentRegistry(),
+    subagents: options.subagents ?? makeSubagentTree(),
     logger,
     pipeline: {
       submit: (request) => {
@@ -361,11 +361,11 @@ describe("子代理归属：main 与 subagent 的 kind 分流", () => {
     expect(submitted[0]!.body).toContain("子任务「子任务」已完成");
   });
 
-  it("父 agent 在册且确由它创建时报 subagent-done（运行时归属是 header 之外的第二个信号）", () => {
+  it("rootOf 将受管子代理解析到父树时，完成类型为 subagent-done", () => {
     const parent = makeSession("p-owner");
     const child = makeSession("s-owned", { header: { parentSession: "p-owner" } });
     const { events, submitted } = assemble({
-      agents: makeAgentRegistry({ live: [parent.agent], owned: [["s-owned", "p-owner"]] }),
+      subagents: makeSubagentTree({ roots: [[child.agent, parent.agent]] }),
     });
     setStatus(events, child, "running");
     child.endTurn(1);
@@ -373,8 +373,10 @@ describe("子代理归属：main 与 subagent 的 kind 分流", () => {
     expect(submitted[0]!.kind).toBe("subagent-done");
   });
 
-  it("父 agent 已消亡（查不到）时判主任务：宁可多报一条 done，也不静默用户自己的任务", () => {
-    const { events, submitted } = assemble();
+  it("可选 subagents 服务缺位时仍按主任务发送 done", () => {
+    const { events, submitted } = assemble({
+      subagents: { rootOf: () => undefined },
+    });
     const child = makeSession("s-orphan", { header: { parentSession: "p-gone" } });
     setStatus(events, child, "running");
     child.endTurn(1);

@@ -2,7 +2,6 @@
 import type { Events } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
-import type { SessionId } from "@deepseek-ai/dsh-session/types";
 import type { ApprovalRequest } from "@deepseek-ai/dsh-user-approval";
 import type { AskUserQuestionRequest } from "@deepseek-ai/dsh-user-questions";
 import type * as pipelineApi from "../pipeline/interface.ts";
@@ -26,17 +25,9 @@ export type AgentErrorPayload = Omit<Parameters<Events["agent/error"]>[0], "erro
   error: string;
 };
 
-/** 活体 agent 的查询结果。写成判别联合而不是 `Agent | undefined`：「查不到」在这里是一个**有名字的事实**——它正是
- * 子代理判定里「父 agent 已消亡」那一支；用可选返回值表达，调用点就得靠判空去猜是哪一种情况。 */
-export type AgentLookup = { found: true; agent: Agent } | { found: false };
-
-/** 运行时归属查询面：某个会话是不是由某个活体 agent 的作用域创建的。fork 型委派与用户 fork 主线在持久化 header 上
- * 完全同形（都只有 parentSession、都没有 origin），header 单信号分不开——唯一可靠依据是运行时归属。 */
-export interface AgentRegistryPort {
-  /** 查活体 agent；不在册即已消亡或从未存在。 */
-  lookup(id: SessionId): AgentLookup;
-  /** `id` 是否由 `owner` 的作用域创建。 */
-  isOwnedBy(id: SessionId, owner: Agent): boolean;
+/** DSH 0.2.2-rc.3 `subagents.rootOf` 的最小运行时读面；undefined 表示可选服务未挂载。 */
+export interface SubagentTreePort {
+  rootOf(agent: Agent): Agent | undefined;
 }
 
 /** 宿主事件面：订阅 + 退订，仅此而已——域拿到的是**事件源**，不是宿主。参数用官方类型层的原始负载，不做二次包装
@@ -63,8 +54,8 @@ export interface HostEventPort {
 export interface EventsDeps {
   /** 宿主事件面：只有组合根够得着 `ctx`。 */
   readonly events: HostEventPort;
-  /** 宿主 agent 注册表：子代理归属判定的第二个信号。 */
-  readonly agents: AgentRegistryPort;
+  /** DSH subagent tree service：完成分类只需从活体 Agent 解析运行时树根。 */
+  readonly subagents: SubagentTreePort;
   /** 诊断出口：完成判定跳过（abort / max-tokens 每轮都走）时要说得出为什么。 */
   readonly logger: LoggerPort;
   readonly pipeline: PipelinePort;
