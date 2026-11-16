@@ -217,7 +217,13 @@ export function retryableOf(result: DeliverResult): boolean {
  * 与 sdk 的 `makeRegister`（种类登记）只差一个字，故这里叫 `makeAgentRegistry`。
  */
 export function makeAgentRegistry(
-  options: { live?: Agent[]; owned?: ReadonlyArray<readonly [string, string]> } = {},
+  options: {
+    live?: Agent[];
+    owned?: ReadonlyArray<readonly [string, string]>;
+    subagents?: AgentRegistryPort["subagents"];
+    /** rc3 已无 `isOwnedBy`；置 false 模拟只有 `subagents` 的宿主。 */
+    legacyOwnership?: boolean;
+  } = {},
 ): AgentRegistryPort {
   const live = new Map((options.live ?? []).map((agent) => [String(agent.id), agent]));
   return {
@@ -225,10 +231,15 @@ export function makeAgentRegistry(
       const agent = live.get(String(id));
       return agent === undefined ? { found: false } : { found: true, agent };
     },
-    isOwnedBy: (id, owner) =>
-      (options.owned ?? []).some(
-        ([child, parent]) => child === String(id) && parent === String(owner.id),
-      ),
+    ...(options.legacyOwnership === false
+      ? {}
+      : {
+          isOwnedBy: (id: Parameters<AgentRegistryPort["lookup"]>[0], owner: Agent) =>
+            (options.owned ?? []).some(
+              ([child, parent]) => child === String(id) && parent === String(owner.id),
+            ),
+        }),
+    ...(options.subagents === undefined ? {} : { subagents: options.subagents }),
   };
 }
 

@@ -30,13 +30,23 @@ export type AgentErrorPayload = Omit<Parameters<Events["agent/error"]>[0], "erro
  * 子代理判定里「父 agent 已消亡」那一支；用可选返回值表达，调用点就得靠判空去猜是哪一种情况。 */
 export type AgentLookup = { found: true; agent: Agent } | { found: false };
 
+/** rc3 的 `ctx.subagents` 子树查询面：只取判断直接父所需的两处，避免为一个可选回退引入新的类型包依赖。 */
+export interface SubagentTreePort {
+  /** 活体 agent 所属子代理树的根；没有活跃运行时归属时抛错。 */
+  rootOf(caller: Agent): Agent;
+  /** 树成员与直接创建者的模型侧名字；根为 `lead`，没有活跃运行时归属时抛错。 */
+  namesOf(agent: Agent): { readonly self: string; readonly parent?: string };
+}
+
 /** 运行时归属查询面：某个会话是不是由某个活体 agent 的作用域创建的。fork 型委派与用户 fork 主线在持久化 header 上
  * 完全同形（都只有 parentSession、都没有 origin），header 单信号分不开——唯一可靠依据是运行时归属。 */
 export interface AgentRegistryPort {
   /** 查活体 agent；不在册即已消亡或从未存在。 */
   lookup(id: SessionId): AgentLookup;
-  /** `id` 是否由 `owner` 的作用域创建。 */
-  isOwnedBy(id: SessionId, owner: Agent): boolean;
+  /** `id` 是否由 `owner` 的作用域创建；rc3 删除该接口后缺位，由 `subagents` 回退判定。 */
+  isOwnedBy?(id: SessionId, owner: Agent): boolean;
+  /** rc3 的子树查询面；rc1 / rc2 没有这个服务，缺位时只能按主任务处理。 */
+  subagents?: SubagentTreePort;
 }
 
 /** 宿主事件面：订阅 + 退订，仅此而已——域拿到的是**事件源**，不是宿主。参数用官方类型层的原始负载，不做二次包装
