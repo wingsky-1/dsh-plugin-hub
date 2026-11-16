@@ -4,8 +4,8 @@
  * 本域运行时能力消费面有六条，都取「实际使用」而非「import 面」（附录 E.6 第 3 条）：
  * - 宿主装载口（LoaderPort）：官方引擎按包名解析 + 挂载，形状由 server/shared/host-faces.ts
  *   自持声明（官方 loader 包不在 catalog，仓库内不可解析，只能拿结构面）；
- * - 宿主工具注册表的查询面（schemas）：官方不暴露状态 API，六态只能靠工具注册面投影
- *   （设计 §3.1 输入面 B）；
+ * - 宿主工具注册表的查询面（schemas）：旧宿主上六态只能靠工具注册面投影（设计 §3.1
+ *   输入面 B）；rc.3 状态句柄只在本包内部嫁接，不作为公开能力；
  * - pipeline 域的超时兜底（withTimeout）：官方 Config 里没有连接超时（只有 toolCallTimeoutMs），
  *   「10s 内失败」这个产品语义只能由我方包在句柄等待上；
  * - workspace 域的 serverName 分配（idFor）：官方按注册作用域活体预留 serverName、同 owner

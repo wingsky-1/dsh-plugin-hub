@@ -132,7 +132,7 @@ class CatalogDirectory {
   }
 
   /**
-   * 读口：该 id 前缀下是否已有注册工具——「已连上」的唯一正向证据（官方零状态 API）。
+   * 读口：该 id 前缀下是否已有注册工具——目录面的正向证据（官方状态句柄只在本包内部嫁接）。
    * 注册面视图按入参现给，本域不自己去取宿主注册表。
    */
   hasRegisteredTools(schemas: SchemaView, id: string): boolean {

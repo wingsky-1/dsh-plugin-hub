@@ -1,7 +1,7 @@
 /**
  * dsh-mcp-manager — unit：visibility 域（#767 笔 1b 交付物 A：模型可见面隐藏）。
  *
- * 覆盖：A1 注册表优先（#922：在册形状良好的 mcp__* 全进名单，不再要求 id 属于单元；A1b 另锁
+ * 覆盖：A1 own 集合优先（#922：在册且由本插件装载的 mcp__* 进名单，官方实例保持可见；A1b 另锁
  * 四原子工具 ws_mcp_* 豁免与畸形名排除）、名单未变不重挂（防自激循环的两道闸）、后注册收敛且旧限制
  * 在新层成功后 dispose、空名单不调用 restrict、disposed/域 disposer 的清理、事件面缺失的降级、装载时的初始
  * 全量 reconcile；B1–B6 锁定 #922：双向错位、逐名 skip+warn、抖动收敛、tools/change 风暴封顶、
@@ -18,7 +18,7 @@ import {
   fakeAgent,
   flakyAgent,
   makeEvents,
-  unitsWith,
+  ownedIds,
   makeLogger,
 } from "./visibility-test-support.ts";
 import {
@@ -27,7 +27,7 @@ import {
 } from "./visibility-reentry-support.ts";
 
 function registerInitialRestrictionCases() {
-  it("A1 agent/created：deny 含注册面全部形状良好的 mcp__ 名（#922 注册表优先，不再要求 id 属于单元）", () => {
+  it("A1 agent/created：只 deny 本插件 own id 的 mcp__ 名，官方 mcp__ 保持可见", () => {
     const log: string[] = [];
     const agent = fakeAgent("a1", log);
     const events = makeEvents();
@@ -35,18 +35,14 @@ function registerInitialRestrictionCases() {
     const logger = makeLogger();
     const dispose = startAgentVisibility({
       events: events.port,
-      units: unitsWith("id-a"),
+      isOwnedServerId: ownedIds("id-a"),
       registeredNames: () => names,
       logger,
     });
     events.handlers.created[0](agent);
-    // id-b / other 的 id 不在单元表里：#922 前会被漏摘（泄漏窗口），现在同样进名单（单元命中走批量，
-    // 其余逐名）；ws_mcp_call 不是 mcp__ 前缀、mcp__ 无分隔符：形状不良，永不进名单。
-    expect(log).toEqual([
-      "restrict:a1[mcp__id-a__echo]",
-      "restrict:a1[mcp__id-b__ping]",
-      "restrict:a1[mcp__other__x]",
-    ]);
+    // id-b / other 不是本插件装载的官方实例：共存时不 hide；ws_mcp_call 不是 mcp__ 前缀、
+    // mcp__ 无分隔符：形状不良，永不进名单。
+    expect(log).toEqual(["restrict:a1[mcp__id-a__echo]"]);
     expect(logger.warns).toEqual([]);
     dispose();
   });
@@ -65,7 +61,7 @@ function registerInitialRestrictionCases() {
     const logger = makeLogger();
     const dispose = startAgentVisibility({
       events: events.port,
-      units: unitsWith("id-a"),
+      isOwnedServerId: ownedIds("id-a"),
       registeredNames: () => names,
       logger,
     });
@@ -82,7 +78,7 @@ function registerInitialRestrictionCases() {
     const agent = fakeAgent("a1", log, () => events.handlers.changed);
     const dispose = startAgentVisibility({
       events: events.port,
-      units: unitsWith("id-a"),
+      isOwnedServerId: ownedIds("id-a"),
       registeredNames: () => ["mcp__id-a__echo"],
       logger: makeLogger(),
     });
@@ -97,7 +93,7 @@ function registerInitialRestrictionCases() {
     const agent = fakeAgent("a1", log);
     const dispose = startAgentVisibility({
       events: events.port,
-      units: unitsWith("id-a"),
+      isOwnedServerId: ownedIds("id-a"),
       registeredNames: () => ["mcp__id-a__echo"],
       logger: makeLogger(),
     });
@@ -115,7 +111,7 @@ function registerInitialRestrictionCases() {
     const names = ["mcp__id-a__echo"];
     const dispose = startAgentVisibility({
       events: events.port,
-      units: unitsWith("id-a"),
+      isOwnedServerId: ownedIds("id-a"),
       registeredNames: () => names,
       logger: makeLogger(),
     });
@@ -138,7 +134,7 @@ function registerInitialRestrictionCases() {
     const names = ["mcp__id-a__echo"];
     const dispose = startAgentVisibility({
       events: events.port,
-      units: unitsWith("id-a"),
+      isOwnedServerId: ownedIds("id-a"),
       registeredNames: () => names,
       logger: makeLogger(),
     });
@@ -159,7 +155,7 @@ function registerCleanupAndFallbackCases() {
     const a2 = fakeAgent("a2", log);
     const dispose = startAgentVisibility({
       events: events.port,
-      units: unitsWith("id-a"),
+      isOwnedServerId: ownedIds("id-a"),
       registeredNames: () => ["mcp__id-a__echo"],
       logger: makeLogger(),
     });
@@ -188,7 +184,7 @@ function registerCleanupAndFallbackCases() {
     expect(() => {
       dispose = startAgentVisibility({
         events: {},
-        units: unitsWith("id-a"),
+        isOwnedServerId: ownedIds("id-a"),
         registeredNames: () => ["mcp__id-a__echo"],
         logger,
       });
@@ -205,7 +201,7 @@ function registerCleanupAndFallbackCases() {
     expect(() => {
       dispose = startAgentVisibility({
         events: events.port,
-        units: unitsWith("id-a"),
+        isOwnedServerId: ownedIds("id-a"),
         registeredNames: () => {
           throw new TypeError("ctx.tools.schemas is not a function");
         },
@@ -230,7 +226,7 @@ function registerCleanupAndFallbackCases() {
     const logger = makeLogger();
     const dispose = startAgentVisibility({
       events: events.port,
-      units: unitsWith("id-a"),
+      isOwnedServerId: ownedIds("id-a"),
       registeredNames: () => ["mcp__id-a__echo"],
       logger,
     });
@@ -248,7 +244,7 @@ function registerCleanupAndFallbackCases() {
     const events = makeEvents(() => live.map((agent) => ({ ...agent })));
     const dispose = startAgentVisibility({
       events: events.port,
-      units: unitsWith("id-a"),
+      isOwnedServerId: ownedIds("id-a"),
       registeredNames: () => ["mcp__id-a__echo"],
       logger: makeLogger(),
     });
@@ -262,7 +258,7 @@ function registerCleanupAndFallbackCases() {
 }
 
 function registerRegistryMismatchCases() {
-  it("B1 错位其一（registry 有 / units 无）：照摘不误（#922 泄漏正例）", () => {
+  it("B1 错位其一（registry 有 / units 无）：own 账本照摘不误（#922 泄漏正例）", () => {
     const log: string[] = [];
     const agent = fakeAgent("a1", log);
     const events = makeEvents();
@@ -270,21 +266,16 @@ function registerRegistryMismatchCases() {
     const logger = makeLogger();
     const dispose = startAgentVisibility({
       events: events.port,
-      units: unitsWith(),
+      isOwnedServerId: ownedIds("idx"),
       registeredNames: () => names,
       logger,
     });
     events.handlers.created[0](agent);
-    // 单元表空：旧交集口径下一个都摘不掉（泄漏）；新口径逐名挂，畸形与四原子仍排除。
-    expect(log).toEqual(["restrict:a1[mcp__idx__a]", "restrict:a1[mcp__idx__b]"]);
+    // 单元表空：旧交集口径下一个都摘不掉（泄漏）；own 账本不依赖单元，两条都摘，畸形与四原子仍排除。
+    expect(log).toEqual(["restrict:a1[mcp__idx__a|mcp__idx__b]"]);
     expect(logger.warns).toEqual([]);
     dispose();
-    expect(log).toEqual([
-      "restrict:a1[mcp__idx__a]",
-      "restrict:a1[mcp__idx__b]",
-      "dispose:a1#2",
-      "dispose:a1#1",
-    ]);
+    expect(log).toEqual(["restrict:a1[mcp__idx__a|mcp__idx__b]", "dispose:a1#1"]);
   });
 
   it("B2 错位其二（units 有 / registry 无）：走 A4 路径，不调用 restrict", () => {
@@ -294,7 +285,7 @@ function registerRegistryMismatchCases() {
     const logger = makeLogger();
     const dispose = startAgentVisibility({
       events: events.port,
-      units: unitsWith("id-a"),
+      isOwnedServerId: ownedIds("id-a"),
       registeredNames: () => ["ws_mcp_call", "bash"],
       logger,
     });
@@ -318,7 +309,7 @@ function registerRegistryMismatchCases() {
     const logger = makeLogger();
     const dispose = startAgentVisibility({
       events: events.port,
-      units: unitsWith("id-a"),
+      isOwnedServerId: ownedIds("id-a", "id-x"),
       registeredNames: () => ["mcp__id-a__ok", "mcp__id-x__ghost"],
       logger,
     });
@@ -336,7 +327,7 @@ function registerRegistryMismatchCases() {
 }
 
 function registerConvergenceCases() {
-  it("B4 抖动收敛：逐轮新增工具精确追补，无变更的重同步冻结", () => {
+  it("B4 抖动收敛：逐轮新增工具整批追补，无变更的重同步冻结", () => {
     const log: string[] = [];
     const events = makeEvents();
     const agent = fakeAgent("a1", log);
@@ -344,7 +335,7 @@ function registerConvergenceCases() {
     const logger = makeLogger();
     const dispose = startAgentVisibility({
       events: events.port,
-      units: unitsWith(),
+      isOwnedServerId: ownedIds("idx"),
       registeredNames: () => names,
       logger,
     });
@@ -360,20 +351,16 @@ function registerConvergenceCases() {
     events.handlers.changed[0]();
     expect(log).toEqual([
       "restrict:a1[mcp__idx__t1]",
-      "restrict:a1[mcp__idx__t1]",
-      "restrict:a1[mcp__idx__t2]",
+      "restrict:a1[mcp__idx__t1|mcp__idx__t2]",
       "dispose:a1#1",
-      "restrict:a1[mcp__idx__t1]",
-      "restrict:a1[mcp__idx__t2]",
-      "restrict:a1[mcp__idx__t3]",
-      "dispose:a1#3",
+      "restrict:a1[mcp__idx__t1|mcp__idx__t2|mcp__idx__t3]",
       "dispose:a1#2",
     ]);
     expect(logger.warns).toEqual([]);
     dispose();
   });
 
-  it("B5 风暴封顶：多 agent 全量 reconcile 的 restrict 数恒等于 agent 数×名单数", () => {
+  it("B5 风暴封顶：多 agent 全量 reconcile 每 agent 只挂一层，restrict 数恒等于 agent 数", () => {
     const log: string[] = [];
     const live: AgentFace[] = [];
     const events = makeEvents(() => live);
@@ -385,16 +372,16 @@ function registerConvergenceCases() {
     const logger = makeLogger();
     const dispose = startAgentVisibility({
       events: events.port,
-      units: unitsWith(),
+      isOwnedServerId: ownedIds("idx"),
       registeredNames: () => names,
       logger,
     });
-    // e1 每次挂载都同步发 tools/change：重入闸必须吞掉，总数仍是 3×4 = 12。
-    expect(log.filter((line) => line.startsWith("restrict")).length).toBe(12);
-    expect(log.length).toBe(12);
+    // e1 每次挂载都同步发 tools/change：重入闸必须吞掉，总数仍是 3×1 = 3。
+    expect(log.filter((line) => line.startsWith("restrict")).length).toBe(3);
+    expect(log.length).toBe(3);
     for (let i = 0; i < 5; i += 1) events.handlers.changed[0]();
-    expect(log.filter((line) => line.startsWith("restrict")).length).toBe(12);
-    expect(log.length).toBe(12);
+    expect(log.filter((line) => line.startsWith("restrict")).length).toBe(3);
+    expect(log.length).toBe(3);
     expect(logger.warns).toEqual([]);
     dispose();
   });
@@ -413,7 +400,7 @@ function registerFailureRecoveryCases() {
     const logger = makeLogger();
     const dispose = startAgentVisibility({
       events: events.port,
-      units: unitsWith("id-a"),
+      isOwnedServerId: ownedIds("id-a"),
       registeredNames: () => ["mcp__id-a__ok", "mcp__id-a__bad"],
       logger,
     });

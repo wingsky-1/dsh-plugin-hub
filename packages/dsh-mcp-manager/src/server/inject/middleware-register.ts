@@ -896,6 +896,50 @@ function resolveServerIdFor(mw: McpMiddleware): ServerIdResolver {
 }
 
 /**
+ * 本地自有 `mcp__` 注册名的裁决。
+ *
+ * 共存边界：只裁决本插件 own 集合里的注册名。官方/兄弟插件直接装载的
+ * `mcp__<serverName>__<tool>` 不归本包管，必须原样放行（不 deny、不改名）。
+ * 形状不良或 id 未登记的 mcp__ 同样不认领——它们不可能是本地安装的实例。
+ *
+ * @returns undefined 表示不认领（调用方直接 next），否则返回本包的裁决。
+ */
+async function ownedMcpNameDecision(
+  name: string,
+  agent: unknown,
+  mw: McpMiddleware,
+  resolveRoot: (agent: unknown) => Promise<string | undefined>,
+  hostResolveServerId?: ServerIdResolver,
+): Promise<PreToolDecision | undefined> {
+  const registered = splitRegisteredName(name);
+  if (registered === undefined || !mw.ownsServerId(registered.segment)) return undefined;
+  // 直连账本优先、池侧兜底：project/off 下全局直连条目的 id 只在本层反查得到，
+  // 而 all/project 的池条目只在单元表里。
+  //
+  // 顺序承重：**先前缀、后解析、最后兜底拒**。前缀命中即「这是内部注册名」，
+  // 后面的解析只用来挑一条更具体的 deny 文案（工具级禁用 / 双下划线歧义），
+  // 不再决定放行与否——因此哈希名、截断名、以及解析不出来的畸形名一律落到兜底拒，
+  // 不依赖 splitRegisteredName 能否反解（RECON 绕过面：把反解改成 fail-open 即可
+  // 复活直呼）。
+  const poolResolve = resolveServerIdFor(mw);
+  const decision = await handleDirectMcpGuard(
+    name,
+    agent,
+    mw.disabledTools,
+    resolveRoot,
+    (id) => hostResolveServerId?.(id) ?? poolResolve(id),
+  );
+  if (decision !== undefined) return decision;
+  return {
+    kind: "deny",
+    reason:
+      `工具注册名 ${JSON.stringify(name)} 是内部标识，模型可见面只有 ws_mcp_search / ` +
+      "ws_mcp_list / ws_mcp_detail / ws_mcp_call，不可直呼；" +
+      "请经 ws_mcp_call 以服务器全名 + 工具裸名调用（同一次调用不要重试本条）",
+  };
+}
+
+/**
  * pre-execute 守卫的**唯一**注册点（#1014 B4）。
  *
  * 为什么曾是两个：历史上「模式为 off 时不建中间层实例」让本守卫无法保证挂载，于是另立一条
@@ -939,30 +983,14 @@ function registerPreExecuteGuard(
         return next();
       }
       if (name.startsWith("mcp__")) {
-        // 直连账本优先、池侧兜底：project/off 下全局直连条目的 id 只在本层反查得到，
-        // 而 all/project 的池条目只在单元表里。
-        //
-        // 顺序承重：**先前缀、后解析、最后兜底拒**。前缀命中即「这是内部注册名」，
-        // 后面的解析只用来挑一条更具体的 deny 文案（工具级禁用 / 双下划线歧义），
-        // 不再决定放行与否——因此哈希名、截断名、以及解析不出来的畸形名一律落到兜底拒，
-        // 不依赖 splitRegisteredName 能否反解（RECON 绕过面：把反解改成 fail-open 即可
-        // 复活直呼）。
-        const poolResolve = resolveServerIdFor(mw);
-        const decision = await handleDirectMcpGuard(
+        const decision = await ownedMcpNameDecision(
           name,
           exec.agent,
-          mw.disabledTools,
+          mw,
           resolveRoot,
-          (id) => hostResolveServerId?.(id) ?? poolResolve(id),
+          hostResolveServerId,
         );
-        if (decision !== undefined) return decision;
-        return {
-          kind: "deny",
-          reason:
-            `工具注册名 ${JSON.stringify(name)} 是内部标识，模型可见面只有 ws_mcp_search / ` +
-            "ws_mcp_list / ws_mcp_detail / ws_mcp_call，不可直呼；" +
-            "请经 ws_mcp_call 以服务器全名 + 工具裸名调用（同一次调用不要重试本条）",
-        };
+        return decision ?? next();
       }
       return next();
     },

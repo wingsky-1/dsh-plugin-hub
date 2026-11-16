@@ -295,10 +295,17 @@ admission gate.
 
 ## Runtime registration (registerServer.toolDefinitions)
 
-Other plugins can register MCP servers at runtime via `ctx.mcpManager.registerServer`
+Other plugins can register MCP servers at runtime via `ctx.wsMcpManager.registerServer`
 (in-memory only, not persisted; idempotent for same names). The registration input
 supports an optional `toolDefinitions` field (caller-provided wrapped tool definitions,
 `ToolDefinition[]`; tool names are **bare names**):
+
+The service name is `wsMcpManager` only; this plugin **does not provide** an `mcpManager`
+alias. If the official client or another plugin already owns `ctx.mcpManager`, both sides
+keep their own service names with no conflict and no error. When coexisting, do not configure
+the same server both in the official client and in this plugin's `mcp.json` — that produces
+two sets of same-named `mcp__` registrations, and this plugin only hides instances it mounted
+itself; official `mcp__*` names stay model-visible.
 
 - **With `toolDefinitions`**: all tools of that server are registered **from the wrapped
   definitions** — `execute` comes from the caller (which may preprocess first and then
@@ -330,7 +337,7 @@ supports an optional `toolDefinitions` field (caller-provided wrapped tool defin
   to the store, never passed through mcpServers imports.
 
 ```ts
-await ctx.mcpManager.registerServer({
+await ctx.wsMcpManager.registerServer({
   name: "my-mcp",
   transport: "stdio",
   command: "my-mcp-server",
@@ -366,7 +373,7 @@ await ctx.mcpManager.registerServer({
   `env` is not a redaction boundary — do not put credentials there if you want them isolated
 - **stdio subprocess inherits host privileges**: MCP server commands run under the host
   process's permissions; only configure trusted servers. Trust boundary: in-process plugin
-  injection (`ctx.mcpManager.registerServer`) shares this plugin's privileges and is not a
+  injection (`ctx.wsMcpManager.registerServer`) shares this plugin's privileges and is not a
   privilege escalation; **the project-level `mcp.json` that ships inside a repository is the
   side you should scrutinize**
 - **Stats carry metadata only**: debug stats (`debug.callStats`) record call counts / durations /

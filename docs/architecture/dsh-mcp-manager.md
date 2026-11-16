@@ -37,7 +37,7 @@
 | 能力 | 入口 | 可见结果与边界 |
 | --- | --- | --- |
 | 服务器配置面 | 全局与项目级 `mcp.json`、运行时注入 | 同构布局（见 §3.2）；旧键不报错、不迁移、不写用户文件（M2） |
-| 模型可见面 | 四个原子工具 `ws_mcp_*` | 宿主注册名 `mcp__<id>__<tool>` 是内部标识，**不在模型工具列表里**（per-agent 视角隐藏，见 §2.3），禁止直呼 |
+| 模型可见面 | 四个原子工具 `ws_mcp_*` | 本插件装载实例的宿主注册名 `mcp__<id>__<tool>` 是内部标识，**不在模型工具列表里**（per-agent 视角隐藏，见 §2.3），禁止直呼；官方/兄弟插件自己的 `mcp__*` 保持可见 |
 | 能力目录 | L1 目录注入（agent/pre-step 钩子） | 按会话 cwd 的静态能力地图；digest 只含服务器集合（见 §3.5） |
 | 状态推送 | SSE `summary` 帧 | coalesce 合并广播；不是可靠队列（见 §3.3） |
 | 管理面 | 11 条 `/api/dsh-mcp/*` 路由 | loopback 围栏 + 方法白名单（见 §3.4） |
@@ -48,7 +48,7 @@
 
 | 非目标 | 依据 |
 | --- | --- |
-| 不提供直呼主形态 | 单池后全部服务器只经中间层单元触达；`mcp__*` 已从模型视野摘掉（visibility 域经宿主 `restrict`，三触发点 reconcile）。宿主没有 `unregister`，退出条件是宿主提供注销面后再收敛 |
+| 不提供直呼主形态 | 单池后本插件装载的服务器只经中间层单元触达；这些实例的 `mcp__*` 已从模型视野摘掉（visibility 域经宿主 `restrict`，三触发点 reconcile）。官方/兄弟插件直接装载的 `mcp__*` 不归本包管，保持可见。宿主没有 `unregister`，退出条件是宿主提供注销面后再收敛 |
 | 不提供准入闸 | `allowTools`/`denyTools` 随策略键删除；工具级禁用表（`isToolDenied`）是执行前裁决，不是准入 |
 | 不订阅 `tools/list_changed` | 工具列表变化在重连/手动刷新时重新同步；目录是采集边界内的 last-good 快照 |
 | 不桥接 resources / prompts | 尚无 harness 消费接口，只桥接工具能力 |
@@ -82,7 +82,7 @@ flowchart LR
 | connection | 连接池宿主面（`McpManager`）：期望集合、单元路由、状态广播 | store 读写面、lifecycle 装载、catalog 目录 |
 | catalog | 目录采集、digest、检索 | `LIST_DEFAULT_TOOLS_PER_SERVER`（与 inject 同源） |
 | lifecycle | 经官方客户端装载（stdio / streamable-http） | 宿主 loader（调用时现取） |
-| visibility | per-agent `restrict` 摘掉 `mcp__*` | 单元表活引用 + 注册面现算名单 |
+| visibility | per-agent `restrict` 摘掉本插件 own 实例的 `mcp__*` | own 账本 + 注册面现算名单 |
 | dispatch | `executeMcpCall`：守卫 → 路由 → 分支派发 | 工具级禁用表、调用预算、redact |
 | inject | `ws_mcp_*` 注册 + A+ 图片准入 | `finalizeContent` 接缝、晚读 thunk |
 | workspace | 全名解析归一（`@global`/`@@global` 等价）与 id 表 | 无域依赖（工厂产物，纯内存） |
@@ -100,7 +100,7 @@ flowchart LR
 flowchart TD
     S(["dsh web 启动<br/>cordis.patch.yml 挂载 ⇢ apply(ctx)"]) --> U["releaseUpgrade 复位 → await installUpgrade<br/>升级链最先跑完（见 §3.6）"]
     U --> L["releaseLifecycle → installLifecycle<br/>宿主 loader 调用时现取"]
-    L --> ST["new McpStore + load()<br/>provide('mcpManager') 服务"]
+    L --> ST["new McpStore + load()<br/>provide('wsMcpManager') 服务"]
     ST --> C["settings 命名空间接线<br/>+ stats.configure + uiUpdate 写 sink"]
     C --> E{"enabled ?"}
     E -->|"否"| Z["不装中间层/路由<br/>（服务仍提供）"]
@@ -153,7 +153,7 @@ sequenceDiagram
 ```
 
 - 远端转发**不带 agent**（留 `parent` / `signal`，无 signal 时现造一个；带 agent 会把子调用挂回已被摘掉 `mcp__*` 的作用域而被自己的 deny 打死）。官方执行器那次图片准入退化成文本，由 A+ 经 `finalizeContent` 补回来（见下）；
-- **per-agent 视角隐藏**：`mcp__*` 从每个 agent 的模型视野摘掉（visibility 域经宿主 `restrict` 实现，三触发点 reconcile），全局注册面与目录仍在（`ws_mcp_list` 可见）。宿主没有 `unregister`（注册方的 disposer 不交本包），故用 per-agent `restrict`；宿主提供注销面后收敛；
+- **per-agent 视角隐藏**：本插件装载实例的 `mcp__*` 从每个 agent 的模型视野摘掉（visibility 域经宿主 `restrict` 实现，三触发点 reconcile），官方/兄弟插件的 `mcp__*` 不隐藏；全局注册面与目录仍在（`ws_mcp_list` 可见）。宿主没有 `unregister`（注册方的 disposer 不交本包），故用 per-agent `restrict`；宿主提供注销面后收敛；
 - **A+ 图片准入**：远端原始图片块经外层 exec 的 agent 解路由、四值白名单与 base64 校验后，由官方 `finalizeContent` 接缝换成真附件块；任何拒绝只降级成 `[image unavailable: …]` 文案、不抛错，无图片时返回 `undefined` 保持结果面不变；
 - **中间层只读边界**：`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` 纯读本地目录缓存（不触达远端、不执行工具）；`ws_mcp_call` 是唯一执行远端工具的入口，执行前经工具级禁用表（`isToolDenied`）裁决。
 
@@ -186,7 +186,7 @@ sequenceDiagram
 - **命名规则** `publicToolName`（`server/shared/tool-names.ts`，唯一派生点）：`mcp__<id>__<tool>`；非法字符替换为 `_`；≤64 字符直接用，否则 `sha256(server\\0tool)` 前 12 位做哈希后缀（`前51字符_<hash12>`）；
 - **工具定义**：远端结果经统一投影收敛（白名单清洗，不裸透传远端字段）；文本提取走 `extractText`（image/audio/resource 降级占位符；现状不截断，截断上限常量见 `DEFAULT_RESULT_TRUNCATE_BYTES`）；调用预算读 `server.toolCallTimeoutMs`（缺省 `CALL_TIMEOUT_MS`），`withTimeout` 兜底统一 +2s；
 - **双轨 reconcile**（`orchestrator/manager.ts#reconcileServers`）：desired = 持久化 store（全局 + 项目）+ runtimeRegistry（同名 runtime 优先），变化才动作；
-- **runtime 注入**：其他插件可经 `ctx.mcpManager.registerServer({...toolDefinitions})` 运行时注册（内存态不落盘，同名 runtime 优先）；带 `toolDefinitions` 时 execute 来自调用方封装（调用方可先做预处理再内部转发底层命令），底层 client 不外露。
+- **runtime 注入**：其他插件可经 `ctx.wsMcpManager.registerServer({...toolDefinitions})` 运行时注册（内存态不落盘，同名 runtime 优先）；带 `toolDefinitions` 时 execute 来自调用方封装（调用方可先做预处理再内部转发底层命令），底层 client 不外露。服务名只认 `wsMcpManager`，不提供 `mcpManager` 别名；与官方共存时同一 server 不得双边重复配置。
 - 连接由官方客户端承接（`servers/lifecycle`），自研栈已在 S1-5c 退役，转发走 §2.3 的子调用链路；官方装载语义变化时先改 `servers/lifecycle` 域。
 
 重连由官方客户端承接：per-server `reconnect` 键（`enabled` / `initialDelayMs` / `maxDelayMs` / `maxAttempts`，与官方 `Reconnect` schema 逐字同值；未知键静默丢弃），默认值 500ms 起、30s 封顶、10 次上限（见 `config/normalize.ts#RECONNECT_DEFAULTS`）：

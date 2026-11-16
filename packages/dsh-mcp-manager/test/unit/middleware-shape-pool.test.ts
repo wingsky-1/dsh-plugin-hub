@@ -580,7 +580,9 @@ describe("#767 S1-4d：guard 判发起者", () => {
   });
 
   it("同名但 parent 不在集合内 → 仍被工具级禁用拒绝", async () => {
-    const { guards } = guardFixture(parseDisabledTools({ "@global": { my: ["t"] } }));
+    const { guards, mw } = guardFixture(parseDisabledTools({ "@global": { my: ["t"] } }));
+    // 本插件 own id 才进直呼裁决；官方 mcp__ 名由共存边界放行。
+    mw.ownServerId("my");
     const decision = await guards.get("tools/pre-execute")(
       {
         name: "mcp__my__t",
@@ -599,6 +601,7 @@ describe("#767 S1-4d：guard 判发起者", () => {
   it("转发结算后（token 已摘除）同一 token 重放直呼 → 拒", async () => {
     const { guards, mw } = guardFixture(parseDisabledTools({}));
     const token = Symbol("forwarded") as unknown as ToolExecutionToken;
+    mw.ownServerId("my");
     mw.forwarding.add(token);
     const guard = guards.get("tools/pre-execute");
     const inFlight = await guard(
@@ -618,7 +621,8 @@ describe("#767 S1-4d：guard 判发起者", () => {
 
   // 文案纪律：deny 是模型唯一能看到的自我纠正依据，冗长会挤占上下文并诱发重试。
   it("兜底拒的文案短且指路 ws_mcp_call", async () => {
-    const { guards } = guardFixture(parseDisabledTools({}));
+    const { guards, mw } = guardFixture(parseDisabledTools({}));
+    mw.ownServerId("my");
     const decision = await guards.get("tools/pre-execute")(
       { name: "mcp__my__t", agent: { session: { header: { cwd: "/proj" } } } },
       async () => ({ kind: "allow" }),

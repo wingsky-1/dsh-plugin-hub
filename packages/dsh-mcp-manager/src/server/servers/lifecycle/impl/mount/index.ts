@@ -19,6 +19,7 @@
  */
 import type { ServerConfig } from "../../../../config/interface.ts";
 import {
+  CONNECT_TIMEOUT_MS,
   DEFAULT_TOOL_CALL_TIMEOUT_MS,
   OFFICIAL_MCP_CLIENT_SPECIFIER,
 } from "../../../../shared/interface.ts";
@@ -39,6 +40,8 @@ interface OfficialConfigCommon {
   readonly toolCallTimeoutMs: number;
   /** 官方重连策略；未知键已在 config 域归一化期丢弃（官方对未知键直接抛错）。 */
   readonly reconnect: Readonly<Record<string, unknown>>;
+  /** 一次连接尝试 + 首次工具同步的预算；与等待窗口共用同一预算。 */
+  readonly startupTimeoutMs: number;
   /** 恒 false：首连失败不得卸载实例，理由见 officialMcpConfig 内注释。 */
   readonly failOnStartupError: false;
 }
@@ -72,9 +75,10 @@ export function officialMcpConfig(
   server: ServerConfig,
   id: string,
   expandServerEnv: (server: ServerConfig) => ServerConfig,
+  startupTimeoutMs = CONNECT_TIMEOUT_MS,
 ): OfficialMcpConfig {
   const expanded = expandServerEnv(server);
-  const common = officialConfigCommon(server, id);
+  const common = officialConfigCommon(server, id, startupTimeoutMs);
   if (server.transport === "stdio") {
     return stdioOfficialConfig(server, expanded, common);
   }
@@ -83,7 +87,11 @@ export function officialMcpConfig(
 
 /** 三个 transport 无关字段的公共段（serverName / failOnStartupError / toolCallTimeoutMs
  *  各有一条口径，见调用处注释）。 */
-function officialConfigCommon(server: ServerConfig, id: string): OfficialConfigCommon {
+function officialConfigCommon(
+  server: ServerConfig,
+  id: string,
+  startupTimeoutMs: number,
+): OfficialConfigCommon {
   return {
     serverName: id,
     // 恒 false（§3.3）：置 true 会让首连失败直接杀掉实例、官方后台重连随之被回收，等于放弃
@@ -91,6 +99,8 @@ function officialConfigCommon(server: ServerConfig, id: string): OfficialConfigC
     failOnStartupError: false,
     // 官方默认 60s；本插件的 DEFAULT_TOOL_CALL_TIMEOUT_MS 是 15s，必须显式覆盖。
     toolCallTimeoutMs: server.toolCallTimeoutMs ?? DEFAULT_TOOL_CALL_TIMEOUT_MS,
+    // 官方自身也按同一连接预算收口；只靠外层 withTimeout 会让官方在超时后继续占着在途尝试。
+    startupTimeoutMs,
     // 缺失时给 {}：官方 resolveReconnectPolicy 先补默认值再判关系，本块不重抄一份默认值表。
     reconnect: server.reconnect ?? {},
   };
@@ -169,7 +179,13 @@ export interface MountServerResult {
 export async function mountServer(input: MountServerInput): Promise<MountServerResult> {
   const { loader, workspace, config, tools, logs } = lifecyclePorts.get();
   const id = workspace.idFor(input.root, input.server.name);
-  const officialConfig = officialMcpConfig(input.server, id, config.expandServerEnv);
+  const connectTimeoutMs = input.connectTimeoutMs ?? CONNECT_TIMEOUT_MS;
+  const officialConfig = officialMcpConfig(
+    input.server,
+    id,
+    config.expandServerEnv,
+    connectTimeoutMs,
+  );
   const module = await loader.load(OFFICIAL_MCP_CLIENT_SPECIFIER);
   await mountLedger.waitForRelease(id);
   if (input.shouldMount?.() === false) throw new Error("connection attempt cancelled");
@@ -188,7 +204,7 @@ export async function mountServer(input: MountServerInput): Promise<MountServerR
       hasTools: (candidate) => hasRegisteredTools(tools, candidate),
       diagnostics: collected.lines,
       onState: input.onState,
-      ...(input.connectTimeoutMs === undefined ? {} : { connectTimeoutMs: input.connectTimeoutMs }),
+      connectTimeoutMs,
     });
   } finally {
     // 必须 finally：窗口抛错时更要摘，否则一个失败的实例会永久占着宿主日志面。

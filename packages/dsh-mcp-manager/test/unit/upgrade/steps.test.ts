@@ -15,7 +15,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { newestTargetVersion } from "../../../../../shared/upgrade-chain.js";
+import { newestTargetVersion, pluginVersion } from "../../../../../shared/upgrade-chain.js";
 import {
   LEGACY_LAYOUT,
   configFile,
@@ -83,35 +83,55 @@ describe("STEPS 表接线：装配方驱动的确实是本包迁移动作", () =
     expect(readFileSync(versionFile(), "utf8").trim()).toBe(newest);
   });
 
-  it("0.2.9 历史刻度跨 0.2.10 推进到最新 home 刻度并可重复启动（判据：存储正文逐字不变）", async () => {
+  it("步骤表最高目标与包版本锁步：漏加版本刻度即红", () => {
+    expect(newestTargetVersion(STEPS)).toBe(pluginVersion(import.meta.dirname));
+  });
+
+  it("0.2.9 历史刻度跨链推进到最新 home 刻度并可重复启动（判据：存储正文逐字不变）", async () => {
     const storedData = '{"servers":["keep exactly"]}\n';
     mkdirSync(dirname(versionFile()), { recursive: true });
     writeFileSync(versionFile(), "0.2.9\n", "utf8");
     writeFileSync(configFile(), storedData, "utf8");
 
     await assemble();
-    expect(readFileSync(versionFile(), "utf8").trim()).toBe("0.2.11");
+    expect(readFileSync(versionFile(), "utf8").trim()).toBe(newestTargetVersion(STEPS));
     expect(readFileSync(configFile(), "utf8")).toBe(storedData);
 
     releaseUpgrade();
     await assemble();
-    expect(readFileSync(versionFile(), "utf8").trim()).toBe("0.2.11");
+    expect(readFileSync(versionFile(), "utf8").trim()).toBe(newestTargetVersion(STEPS));
     expect(readFileSync(configFile(), "utf8")).toBe(storedData);
   });
 
-  it("0.2.10 → 0.2.11 只推进 home 刻度并可重复启动（判据：存储正文逐字不变，漏步或误写必须红）", async () => {
+  it("0.2.10 历史刻度跨链推进到最新 home 刻度并可重复启动（判据：存储正文逐字不变）", async () => {
     const storedData = '{"servers":["keep exact rc1"]}\n';
     mkdirSync(dirname(versionFile()), { recursive: true });
     writeFileSync(versionFile(), "0.2.10\n", "utf8");
     writeFileSync(configFile(), storedData, "utf8");
 
     await assemble();
-    expect(readFileSync(versionFile(), "utf8").trim()).toBe("0.2.11");
+    expect(readFileSync(versionFile(), "utf8").trim()).toBe(newestTargetVersion(STEPS));
     expect(readFileSync(configFile(), "utf8")).toBe(storedData);
 
     releaseUpgrade();
     await assemble();
-    expect(readFileSync(versionFile(), "utf8").trim()).toBe("0.2.11");
+    expect(readFileSync(versionFile(), "utf8").trim()).toBe(newestTargetVersion(STEPS));
+    expect(readFileSync(configFile(), "utf8")).toBe(storedData);
+  });
+
+  it("0.2.11 → 0.2.12 只推进 home 刻度并可重复启动（判据：存储正文逐字不变，漏步或误写必须红）", async () => {
+    const storedData = '{"servers":["keep exact rc3"]}\n';
+    mkdirSync(dirname(versionFile()), { recursive: true });
+    writeFileSync(versionFile(), "0.2.11\n", "utf8");
+    writeFileSync(configFile(), storedData, "utf8");
+
+    await assemble();
+    expect(readFileSync(versionFile(), "utf8").trim()).toBe("0.2.12");
+    expect(readFileSync(configFile(), "utf8")).toBe(storedData);
+
+    releaseUpgrade();
+    await assemble();
+    expect(readFileSync(versionFile(), "utf8").trim()).toBe("0.2.12");
     expect(readFileSync(configFile(), "utf8")).toBe(storedData);
   });
 });

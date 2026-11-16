@@ -1,10 +1,13 @@
 /**
  * dsh-mcp-manager — 跨端服务类型单点（D5，#767 B1.5b）。
  *
- * ctx.mcpManager 的类型面：宿主提供方（src/index.ts 的 provideMcpManagerService）按它装配，
+ * ctx.wsMcpManager 的类型面：宿主提供方（src/index.ts 的 provideMcpManagerService）按它装配，
  * 兄弟插件**从本包入口引类型**（\`import type { McpManagerService } from
- * "@wingsky-1/dsh-mcp-manager"\`）——入口的声明合并让 ctx.mcpManager 在消费方
+ * "@wingsky-1/dsh-mcp-manager"\`）——入口的声明合并让 ctx.wsMcpManager 在消费方
  * 类型面可达。物理定义只在本文件（原仓库级 shared/mcp-manager-service.d.ts 已退回包内）。
+ *
+ * 服务名只认 `wsMcpManager`：官方/兄弟插件的 `ctx.mcpManager` 是另一个服务，
+ * 本插件不提供别名；同一进程中两者可以并存。
  *
  * 服务面（通用 MCP 能力 + 运行时注入专用面）：
  * - 注入面：registerServer / unregisterServer（内存态不落盘，同名幂等；
@@ -68,7 +71,7 @@ export interface EncapsulatedToolDefinition {
   parameters?: unknown;
 }
 
-/** ctx.mcpManager service 面（完整：注入 + 控制 + 查询）。 */
+/** ctx.wsMcpManager service 面（完整：注入 + 控制 + 查询）。 */
 export interface McpManagerService {
   // ---- 注入面（内存态不落盘） ----
   /** 运行时注册服务器。同名已存在（store 或 runtime）→ { existing: true } 不抛错。 */

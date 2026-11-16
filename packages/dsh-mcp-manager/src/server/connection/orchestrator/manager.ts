@@ -699,7 +699,7 @@ export class McpManager {
   userStatePath: string;
   /** MCP 调用统计收集器（可用于 debug 模式量化调用指标与渐进式披露漏斗）。 */
   stats: McpStatsCollector;
-  /** 运行时注册表（内存态，不落盘）：供其他插件经 ctx.mcpManager 注入服务器。
+  /** 运行时注册表（内存态，不落盘）：供其他插件经 ctx.wsMcpManager 注入服务器。
    * 双轨 reconcile：store.data.servers（持久化）+ runtimeRegistry（运行时）。
    * 同名冲突策略：runtime 优先（运行时注入是「当前会话」语义）。 */
   runtimeRegistry: Map<string, ServerConfig>;
@@ -842,7 +842,7 @@ export class McpManager {
   }
 
   /**
-   * 公共查询面 `ctx.mcpManager.getTools` 的数据源（M5 = A，本笔换源）：该服务器在
+   * 公共查询面 `ctx.wsMcpManager.getTools` 的数据源（M5 = A，本笔换源）：该服务器在
    * 连接池里的**注册名**清单（`mcp__<id>__<tool>`，与 `ctx.tools` 注册表一致）。
    *
    * 口径不变：返回注册名、不是裸名（裸名是 `summary().tools` / 目录读口的口径）。
@@ -1462,7 +1462,7 @@ export class McpManager {
 
   /**
    * 运行时注册服务器（内存态，不落盘）。
-   * 供其他插件经 ctx.mcpManager 注入（官方 storageDomain service 模式）。
+   * 供其他插件经 ctx.wsMcpManager 注入（官方 storageDomain service 模式）。
    * - 同名已存在（store 或 runtime）：返回 { name, existing: true }，不抛错；
    * - 注册即连接（走 start 的 config 直传分支，同名 runtime 优先）；
    * - 串行队列防 reconcileBusy 吞注册；多插件并发注册排队。

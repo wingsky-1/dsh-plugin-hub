@@ -1,7 +1,7 @@
 /**
  * dsh-mcp-manager — 核心服务契约独立门禁（issue #476，service-contract）。
  *
- * 背景：`ctx.mcpManager` 服务类型面（src/shared/service.ts）是单一
+ * 背景：`ctx.wsMcpManager` 服务类型面（src/shared/service.ts）是单一
  * 事实源，但提供方 src/index.ts 的 provide 对象方法全是宽面签名（string /
  * Record<string, unknown>），与类型面无编译期锚点；此前「契约签名变更未同步
  * 测试」纯靠人工，改 shared 类型不触发任何检查（skipLibCheck + 消费方 import
@@ -13,7 +13,7 @@
  *    本文件被 tsc 编译即红。本文件的类型断言在 Node 直跑（type stripping）时
  *    被擦除，因此必须由编译面执行（接线见文件头注释链：scripts/test/
  *    service-contract-wiring.test.ts spawn tsc -p test/tsconfig.json）。
- * 2. 运行时：静态读取 src/index.ts 源文本，提取 `ctx.provide("mcpManager", {...})`
+ * 2. 运行时：静态读取 src/index.ts 源文本，提取 `ctx.provide("wsMcpManager", {...})`
  *    对象的方法名集合 + 参数个数/可选位，与契约清单比对（不多不少）——提供方
  *    删方法/改参数形状逃过 tsc 宽面签名时红。
  *
@@ -297,7 +297,7 @@ function findProvideBody(src: string): {
   bodyStart: number;
   bodyEnd: number;
 } {
-  const marker = 'provide("mcpManager", {';
+  const marker = "provide(MCP_MANAGER_SERVICE, {";
   const markerIndex = src.indexOf(marker);
   if (markerIndex < 0) return { markerIndex, bodyStart: -1, bodyEnd: -1 };
   const openIndex = markerIndex + marker.length - 1;
@@ -341,7 +341,7 @@ function parseBodyMethods(body: string): Array<{
 }
 
 /**
- * 从 src/index.ts 源文本提取 provide("mcpManager", {...}) 对象的方法面。
+ * 从 src/index.ts 源文本提取 provide(MCP_MANAGER_SERVICE, {...}) 对象的方法面。
  * 说明：provide 对象字面量未导出、且 src/index.ts 导入链重（不 import 运行时），
  * 故用源文本级静态提取（v2 方案「c 兜底」层级：方法名存在性 + 参数形状即可抓
  * 删方法/改参数量；不做 AST 级双真源）。括号配对跳过字符串与注释，防方法体
@@ -370,7 +370,7 @@ function extractProvidedServiceMethods(): {
 describe("service-contract：src/index.ts provide 方法面与契约清单一致", () => {
   const extracted = extractProvidedServiceMethods();
 
-  it('src/index.ts 应包含 ctx.provide("mcpManager", {...}) 服务注入', () => {
+  it('src/index.ts 应包含 ctx.provide("wsMcpManager", {...}) 服务注入', () => {
     expect(extracted.markerIndex >= 0).toBe(true);
   });
 
@@ -378,7 +378,7 @@ describe("service-contract：src/index.ts provide 方法面与契约清单一致
     expect(extracted.bodyStart >= 0 && extracted.bodyEnd > extracted.bodyStart).toBe(true);
   });
 
-  it('provide("mcpManager") 方法名集合应与契约清单一致（不多不少）', () => {
+  it('provide("wsMcpManager") 方法名集合应与契约清单一致（不多不少）', () => {
     const contractNames = CONTRACT_METHODS.map((x) => x.name);
     const providedNames = extracted.methods.map((x) => x.name);
     expect([...providedNames].sort()).toEqual([...contractNames].sort());
@@ -426,7 +426,7 @@ describe("service-contract 拆分目标：findProvideBody 定位 provide 块边�
 
   it("字符串内大括号不应干扰对象边界", () => {
     const src =
-      'provide("mcpManager", {\n' +
+      "provide(MCP_MANAGER_SERVICE, {\n" +
       '  a: (x: string) => "{ not a brace }",\n' +
       "  b: () => 1,\n" +
       "});";
@@ -439,7 +439,7 @@ describe("service-contract 拆分目标：findProvideBody 定位 provide 块边�
 
   it("行注释与块注释内大括号不应干扰边界", () => {
     const src =
-      'provide("mcpManager", {\n' +
+      "provide(MCP_MANAGER_SERVICE, {\n" +
       "  // comment { \n" +
       "  /* block } { */\n" +
       "  a: () => 1,\n" +
@@ -451,7 +451,7 @@ describe("service-contract 拆分目标：findProvideBody 定位 provide 块边�
 
   it("模板插值内大括号应被跳过", () => {
     const src =
-      'provide("mcpManager", {\n' +
+      "provide(MCP_MANAGER_SERVICE, {\n" +
       "  a: (x: string) => `hi ${ { v: 1 } }`,\n" +
       "  b: () => 1,\n" +
       "});";

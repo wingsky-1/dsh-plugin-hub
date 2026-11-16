@@ -249,17 +249,37 @@ function installConfigSettings(
 }
 
 /**
- * 向宿主容器提供核心化服务 `ctx.mcpManager`（供其他插件运行时注入/控制/查询
+ * 读取本插件已经提供的核心化服务。`false` 表示服务缺席时不抛错——这是幂等短路的
+ * 唯一探针：重载 / 重复 apply 时不能再建第二套 manager / 路由 / settings / watch。
+ *
+ * 只认本插件自己的 `wsMcpManager`。官方或兄弟插件的 `ctx.mcpManager` 不参与判定，
+ * 本插件也**不**提供 `mcpManager` 别名（共存时两边各管各的服务名）。
+ */
+function existingMcpManagerService(ctx: Context): McpManagerService | undefined {
+  if (typeof (ctx as unknown as { get?: unknown }).get !== "function") return undefined;
+  try {
+    return ctx.get(MCP_MANAGER_SERVICE, false) as McpManagerService | undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 向宿主容器提供核心化服务 `ctx.wsMcpManager`（供其他插件运行时注入/控制/查询
  * MCP 服务器）。提供时机由调用方保证（store.load 之后 manager 已就绪）；卸载
  * 由 mcp-manager 自身 dispose() 全量清理（含 runtime 条目与 supervisor）。
- * 兼容：fake ctx（单元测试 mock）可能无 provide，可选调用静默降级。
+ * 兼容：fake ctx（单元测试 mock）可能无 provide / get，可选调用静默降级。
+ *
+ * 幂等：已存在同名服务即复用短路，不再覆盖或重建。本插件不提供 `mcpManager`
+ * 别名，官方 `mcpManager` 被占用时既不冲突也不报错。
  *
  * 不修项备注（#770-14 低价值收尾，用户裁决）：#5 关闭理由与官方一致（URL 由用户 review，本处不写链）；
  * B1 按 YAGNI 保留双短路防风暴现状；contract-check 盲区与 zIndexBase 非本 issue 面，另开 issue 跟踪，本轮不修。
  */
 function provideMcpManagerService(ctx: Context, manager: McpManager): void {
+  if (existingMcpManagerService(ctx) !== undefined) return;
   if (typeof (ctx as unknown as { provide?: unknown }).provide !== "function") return;
-  ctx.provide("mcpManager", {
+  ctx.provide(MCP_MANAGER_SERVICE, {
     // 注入面（内存态不落盘，同名幂等；toolDefinitions 可选封装定义透传 supervisor）
     registerServer: (server: Record<string, unknown>) => manager.registerServer(server),
     unregisterServer: (name: string) => manager.unregisterServer(name),
@@ -556,6 +576,9 @@ export async function apply(
   ctx: Context,
   config: Record<string, unknown> | undefined,
 ): Promise<void> {
+  // #1196：重复 apply 复用已提供的服务，不重建 manager / 路由 / settings / watch。
+  // 判定必须在任何存储迁移与装配之前；只认本插件自己的服务名。
+  if (existingMcpManagerService(ctx) !== undefined) return;
   const options = resolveApplyOptions(config);
 
   // 装配顺序（§十二 接线顺序约束）：存量存储迁移必须在任何读存储的域之前跑完——先建存储再
@@ -598,7 +621,7 @@ export async function apply(
   await store.load();
   const manager = new McpManager(ctx, store);
 
-  // 核心化服务（官方 storageDomain 模式）：对外暴露 ctx.mcpManager（见本文件的 provideMcpManagerService）。
+  // 核心化服务（官方 storageDomain 模式）：对外暴露 ctx.wsMcpManager（见本文件的 provideMcpManagerService）。
   provideMcpManagerService(ctx, manager);
 
   // settings 命名空间合并面 → 运行时同步（debug/stats）。
@@ -769,7 +792,7 @@ async function assembleEnabledRuntime(
   // 后注册的名字不在旧快照里）。units 与 schemas 都是活引用，域每次现算名单。
   const disposeVisibility = startAgentVisibility({
     events: faces.events,
-    units: mw.units,
+    isOwnedServerId: (id) => mw.ownsServerId(id),
     registeredNames: () => faces.tools.schemas().map((schema) => schema.name),
     logger: faces.logger,
   });
@@ -869,7 +892,7 @@ export type { ClientUiConfig } from "./shared/interface.ts";
 // 直接取自子层门面——connection/interface.ts 只留类型出口，不再转发值符号。
 // #875 M2c：McpManager / McpMiddleware 两个句柄类与 10 条超时/截断档位常量按 (b) 退出导出面
 // （判据 R1：本包 12 个域门面的首句全是 seam 陈述，无一命名对外承诺，故不满足 (a) 的前置）。
-// 对外能力仍经 ctx.mcpManager 服务面（见本文件 provideMcpManagerService）与 official 协议栈。
+// 对外能力仍经 ctx.wsMcpManager 服务面（见本文件 provideMcpManagerService）与 official 协议栈。
 export {
   DEFAULT_TOOL_CALL_TIMEOUT_MS,
   publicToolName,
@@ -883,20 +906,21 @@ export { makeResolveRoot } from "./server/workspace/interface.ts";
 // 禁用判定 / 超时包装 / 结果投影是管道内部的实现步骤。createRedactor 保留：它是 (d4)
 // 经 ctx.tools 注册工具返回的脱敏器工厂（登记文件列了产出点），契约面。
 export { createRedactor } from "./server/pipeline/interface.ts";
-// 核心化 service（官方 storageDomain 模式）：ctx.mcpManager 类型面 + 声明合并。
+// 核心化 service（官方 storageDomain 模式）：ctx.wsMcpManager 类型面 + 声明合并。
 // 仅类型导出（无副作用导入）：消费方 import 类型时 tsc 会解析 shared 门面，
 // 入口的 declare module 合并自动生效；副作用导入会让 stryker sandbox 解析
 // src/service.js 失败（sandbox 只有 .ts），也避免 .d.ts 里残留 .ts 引用。
 export type { McpManagerServerInput, McpManagerService } from "./shared/interface.ts";
 
 /**
- * 服务名：本插件对兄弟插件开放的 ABI。声明合并的键引用它，而不是就地再写一遍字面量——两处字面量
- * 在改名时只会有一处被改到，而症状（消费方 `ctx.get` 拿到空）出现在别的插件里。名字的所有权在
- * 提供方（本文件的 provideMcpManagerService）；合并它与 provide 字面量要同笔改 service-contract.test.ts 的源文本 marker，归后续刀。
+ * 服务名：本插件对兄弟插件开放的 ABI。声明合并的键与 provide 调用都引用它，而不是各写一遍
+ * 字面量——两处字面量在改名时只会有一处被改到，而症状（消费方 `ctx.get` 拿到空）出现在别的
+ * 插件里。名字的所有权在提供方（本文件的 provideMcpManagerService）；service-contract.test.ts
+ * 的源文本 marker 与它同源。
  *
  * 它不进包导出面：入口对外只有声明合并本身，常量不外放。
  */
-const MCP_MANAGER_SERVICE = "mcpManager" as const;
+const MCP_MANAGER_SERVICE = "wsMcpManager" as const;
 
 /**
  * 对外名字的声明合并。**必须写在包入口**：declare module 是全局增强，入口声明面不可达时

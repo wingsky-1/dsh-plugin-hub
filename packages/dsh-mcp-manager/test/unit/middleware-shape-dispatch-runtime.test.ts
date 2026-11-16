@@ -500,14 +500,16 @@ describe("B11：含连续双下划线名 fail-closed 拒绝并指往 ws_mcp_call
   }
 
   it("pre-execute guard 已注册", () => {
-    const { guards } = guardFixture(parseDisabledTools({ "@global": { my: ["sv__t"] } }));
+    const { guards, mw } = guardFixture(parseDisabledTools({ "@global": { my: ["sv__t"] } }));
+    mw.ownServerId("my");
     expect(typeof guards.get("tools/pre-execute") === "function").toBeTruthy();
   });
 
   it("B11：含连续双下划线名 fail-closed 拒绝（#903 B-M4：放行会绕过禁用）", async () => {
     // 情形 B：禁用表只有「错位形态」记录（@global/my → sv__t）→ 歧义直呼一律
     // 拒绝（旧口径放行 → 已禁用的含 __ 工具经直呼复活）。
-    const { guards } = guardFixture(parseDisabledTools({ "@global": { my: ["sv__t"] } }));
+    const { guards, mw } = guardFixture(parseDisabledTools({ "@global": { my: ["sv__t"] } }));
+    mw.ownServerId("my");
     // guard 已注册由首用例保证（同一装配器），此处断言存在；裁决形状由被测返回。
     const decisionB = (await guards.get("tools/pre-execute")!(
       { name: "mcp__my__sv__t", agent: { session: { header: { cwd: "/proj" } } } },
@@ -520,13 +522,23 @@ describe("B11：含连续双下划线名 fail-closed 拒绝并指往 ws_mcp_call
   it("B11：真实形态记录同样拒绝（不可逆 → 指往裸名路径）", async () => {
     // 情形 A：禁用表只有「真实形态」记录（@global/my__sv → t）→ 同样拒绝；
     // 含 __ 工具经 ws_mcp_call 裸名路径照常用（确定性裁决），直呼歧义不再放行。
-    const { guards } = guardFixture(parseDisabledTools({ "@global": { my__sv: ["t"] } }));
+    const { guards, mw } = guardFixture(parseDisabledTools({ "@global": { my__sv: ["t"] } }));
+    mw.ownServerId("my");
     const decisionA = (await guards.get("tools/pre-execute")!(
       { name: "mcp__my__sv__t", agent: { session: { header: { cwd: "/proj" } } } },
       async () => ({ kind: "allow" }),
     )) as { kind: unknown; reason?: unknown };
     expect(decisionA.kind).toBe("deny");
     expect(String(decisionA.reason)).toMatch(/ws_mcp_call/);
+  });
+
+  it("B11：官方 mcp__ 名不在 own 集合 → 原样放行（共存）", async () => {
+    const { guards } = guardFixture(parseDisabledTools({ "@global": { other: ["t"] } }));
+    const decision = (await guards.get("tools/pre-execute")!(
+      { name: "mcp__other__t", agent: { session: { header: { cwd: "/proj" } } } },
+      async () => ({ kind: "allow" }),
+    )) as { kind: unknown };
+    expect(decision.kind).toBe("allow");
   });
 });
 

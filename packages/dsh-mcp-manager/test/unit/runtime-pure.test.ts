@@ -78,6 +78,44 @@ describe("中间层：连接短路与代际处置", () => {
     expect(disposeServer).toHaveBeenCalledWith("id-1");
   });
 
+  it("disposePreviousGeneration：官方 closure 未确认关闭时拒绝继续重挂", async () => {
+    const disposeServer = vi.fn();
+    const status = {
+      current: () => ({ state: "closed" as const }),
+      closure: () => ({ closeConfirmed: false }),
+      onChange: () => () => {},
+    };
+    const unconfirmed = entry({ connectionStatus: status });
+    await expect(disposePreviousGeneration(unconfirmed, disposeServer)).rejects.toThrow(
+      "previous connection cleanup is incomplete",
+    );
+    expect(disposeServer).toHaveBeenCalledWith("id-1");
+    expect(unconfirmed.disposed).toBe(true);
+
+    const cleanupError = entry({
+      connectionStatus: {
+        ...status,
+        closure: () => ({ closeConfirmed: true, cleanupError: "close failed" }),
+      },
+    });
+    await expect(disposePreviousGeneration(cleanupError, disposeServer)).rejects.toThrow(
+      "previous connection cleanup is incomplete",
+    );
+
+    const unsubscribe = vi.fn();
+    const confirmed = entry({
+      connectionStatus: {
+        ...status,
+        closure: () => ({ closeConfirmed: true }),
+        onChange: () => unsubscribe,
+      },
+      statusUnsubscribe: unsubscribe,
+    });
+    await expect(disposePreviousGeneration(confirmed, disposeServer)).resolves.toBeUndefined();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    expect(confirmed.statusUnsubscribe).toBeUndefined();
+  });
+
   it("virtualUnitState：禁用优先于拆除，拆除优先于已连（#413 契约）", () => {
     expect(
       virtualUnitState(entry({ server: { name: "s", transport: "stdio", enabled: false } }), false),
