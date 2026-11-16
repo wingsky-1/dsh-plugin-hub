@@ -5,8 +5,8 @@
  * verify-version 回归：tag 唯一来源口径 + W1.1 --log-file 落盘。
  *
  * 为什么需要它：它是发版链路第一道版本门。--log-file 的镜像必须与 stdout 逐行一致，
- * 且三种红态（非 tag / 空包集 / 版本不一致）都不得丢证据。CLI 用例跑在当前 worktree
- * （无精确 tag → 确定性 exit 1），离线；纯函数直测。
+ * 且三种红态（非 tag / 空包集 / 版本不一致）都不得丢证据。CLI 用例用隔离的 GIT_DIR
+ * 稳定构造非 tag 环境（不依赖当前 worktree 是否恰好位于 tag），离线；纯函数直测。
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -46,8 +46,9 @@ test("CLI：非 tag 环境 exit 1，且 --log-file 镜像 stderr 的 fail 行", 
     const result = spawnSync(process.execPath, [SCRIPT, "--log-file", log], {
       cwd: ROOT,
       encoding: "utf8",
+      env: { ...process.env, GIT_DIR: join(dir, "not-a-git-repo") },
     });
-    assert.equal(result.status, 1, "当前 worktree 无精确 tag，必须 exit 1");
+    assert.equal(result.status, 1, "隔离 GIT_DIR 下必须按非 tag 环境 exit 1");
     assert.match(result.stderr, /非 tag 环境/);
     // 镜像一致：落盘文件逐行 == 终端输出的 fail 行（证据与所见同源）
     assert.match(readFileSync(log, "utf8"), /非 tag 环境/);
@@ -57,5 +58,12 @@ test("CLI：非 tag 环境 exit 1，且 --log-file 镜像 stderr 的 fail 行", 
 });
 
 test("main 返回值：非 tag 环境返回 1（不抛错）", () => {
-  assert.equal(main([]), 1);
+  const previous = process.env.GIT_DIR;
+  process.env.GIT_DIR = join(tmpdir(), "verify-version-no-git");
+  try {
+    assert.equal(main([]), 1);
+  } finally {
+    if (previous === undefined) delete process.env.GIT_DIR;
+    else process.env.GIT_DIR = previous;
+  }
 });
