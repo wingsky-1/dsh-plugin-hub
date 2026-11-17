@@ -115,6 +115,7 @@ class AgentStateMachine {
   }
 
   private settleIdle(agent: Agent, run: AgentRun): DoneOutcome {
+    if (!this.installed) throw new Error(NOT_INSTALLED);
     const durationMs = run.startedAt > 0 ? Date.now() - run.startedAt : 0;
     run.runningSeen = false;
     run.startedAt = 0;
