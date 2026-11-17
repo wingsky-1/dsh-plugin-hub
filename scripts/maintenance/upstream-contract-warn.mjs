@@ -30,7 +30,8 @@
  * 基线更新规则：改数须先更新 KNOWN_TRACKING 源码注释指针并连续三轮 runs 顺延稳定才可上调；
  * 跟踪以注释指针为唯一载体，不开 issue。
  * DYN_BASE 为 1，UNTRACKED_BASE 为 8（首轮实测校准 7 名逐项核过 peers 无类型声明，
- * 另加 #1137 的 sessionProjections，见 KNOWN_TRACKING；超 8 或出新名即 FAIL），KNOWN 为 8 名。
+ * 另加 #1137 的 sessionProjections；rc3 适配以 subagents 替换已退役的 sessionPersistence，
+ * 见 KNOWN_TRACKING；超 8 或出新名即 FAIL），KNOWN 为 8 名。
  * C1：ctx.on 字面量实得 19，v2 称 18，差 1 为 provider 多行调用的
  * internal/service（行扫描漏计）；#1011 的 LAN 显式订阅已由 shared seam 统一，不再重复计数。
  * 出口：通过或 FAIL 一律 exit 0；范围、管线、基线三处结构与环境异常经 gate-exit failClosed。
@@ -52,9 +53,9 @@ const KNOWN_UNTRACKED = [
   "connection",
   "loader",
   "locale",
-  "sessionPersistence",
   "sessionProjections",
   "slots",
+  "subagents",
 ];
 const TRACKING_ANCHOR = "实测校准（8 名逐名跟踪见 KNOWN_TRACKING；超 8 或出新名即 FAIL）";
 const KNOWN_TRACKING = {
@@ -68,9 +69,10 @@ const KNOWN_TRACKING = {
     "shared/host-utils.ts:143：官方 connection 服务按请求动态读取，缺失或方法异常时 fail-closed；peers 无类型声明",
   locale: "客户端可选服务（宿主核心提供，if 守卫，peers 无类型声明）：3 处客户端消费点",
   slots: "客户端可选服务（宿主核心提供，if 守卫，peers 无类型声明）：4 包 client/index 共 4 处",
-  sessionPersistence: "当前活动包未消费；旧 worktree-sidebar 已在 #1141 退役",
   sessionProjections:
     "packages/dsh-mcp-manager/src/server/shared/compose.ts:127 注释：逐 session 读原始工作目录投影，#1137 语义 A；catalog 锁定 rc 无该官方包类型",
+  subagents:
+    "packages/dsh-notifier/src/index.ts:267 注释：rc3 子树关系回退子代理归属；catalog peers 无该服务类型",
 };
 const EVENT_VERBS = ["on", "once", "emit", "parallel", "serial", "waterfall", "bail"];
 const FRAMEWORK_ONLY = new Set(["get", "provide", "inject", "effect", "plugin"]);

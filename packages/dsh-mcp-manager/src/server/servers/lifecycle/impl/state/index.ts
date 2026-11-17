@@ -1,12 +1,13 @@
 /**
  * dsh-mcp-manager — servers/lifecycle/impl/state/index.ts：六态投影（纯函数）。
  *
- * 官方 dsh-mcp-client **不暴露任何状态 API**（运行时只导出 Config / apply / inject / name），
- * 所以六态只能由「我方动作 + 工具注册面 + 我方超时封装」投影，而不是读官方内部状态。词表的
+ * 官方旧版本不暴露状态 API；rc.3 起提供内部连接状态句柄（`connectionStatusOf`），本包只在
+ * 连接运行时内部嫁接它，不新增公开 restart / probe / watch / 配置键 / 状态 DTO。句柄缺失时
+ * 六态仍由「我方动作 + 工具注册面 + 我方超时封装」投影，而不是要求宿主暴露内部状态。词表的
  * 物理定义在 src/shared/status.ts（跨端契约：summary().counts 的键序与客户端分组共用同一份），
  * 本文件不另造词表、只投影。
  *
- * 三条不可观测性（降级表述写在这里，因为投影口径由此确定）：
+ * 三条降级口径（只在状态句柄缺失时适用；写在这里，因为回退投影由此确定）：
  * 1. **首连失败的具体 cause 拿不到**。官方在 failOnStartupError:false 下不抛（apply 正常
  *    resolve），connection.ready 的 {error} 只回到官方内部；改用 true 换 cause 会让失败的
  *    fiber 直接 FAILED、其 ctx.effect 被回收，官方后台重连随之消失。故 failed 携带的 error

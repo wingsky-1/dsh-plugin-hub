@@ -7,6 +7,7 @@ import type { Agent } from "@deepseek-ai/dsh-agent";
 import type {} from "@deepseek-ai/dsh-session-title";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import type { TurnEndReason } from "@deepseek-ai/dsh-session/types";
+import type { AgentRegistryPort } from "../../deps.ts";
 import type { SessionTitle, TurnEndRead } from "./type.ts";
 // 截断走包内唯一的 code-point 截断而不是 `String.prototype.slice`：同包 8 个展示出口
 // （bark / webhook / browser / system / pipeline finalize / shared reason）都用它，
@@ -63,11 +64,35 @@ export function lastTurnEndOf(agent: Agent): TurnEndRead {
 }
 
 /**
- * 是否子代理：只认官方 SessionHeader 的 origin 分类标记。parentSession 也可能保留在历史普通 fork
- * 上，单独出现不足以分类；`origin: "subagent"` 才表示该会话创建为子代理。
+ * 是否子代理：`origin` 命中即真；否则要运行时归属确凿成立（父 agent 在活体注册表里，
+ * 且确由它创建）。任一环不成立都走主任务分支——宁可多报一条 done，不静默用户自己的任务。
  */
-export function isSubagentOf(agent: Agent): boolean {
-  return agent.session.header.origin === "subagent";
+export function isSubagentOf(agent: Agent, agents: AgentRegistryPort): boolean {
+  if (agent.session.header.origin === "subagent") return true;
+  const parentId = agent.session.header.parentSession;
+  if (parentId === undefined) return false;
+  const parent = agents.lookup(parentId);
+  if (!parent.found) return false;
+  // rc1 / rc2 有官方 isOwnedBy；rc3 删除了它，改由 ctx.subagents 的树关系判定。两代都按「拿不准就
+  // 主任务」收口——多报一条 done 可以接受，把用户自己的 fork 当子代理静默掉不行。
+  if (typeof agents.isOwnedBy === "function") return agents.isOwnedBy(agent.id, parent.agent);
+  return isDirectChildOf(agent, parent.agent, agents.subagents);
+}
+
+/** rc3 回退：同一棵子代理树里，child 的名字父项就是 owner 的自身名字即直接父子。 */
+function isDirectChildOf(
+  child: Agent,
+  owner: Agent,
+  subagents: AgentRegistryPort["subagents"],
+): boolean {
+  if (subagents === undefined) return false;
+  try {
+    if (subagents.rootOf(child) !== subagents.rootOf(owner)) return false;
+    return subagents.namesOf(child).parent === subagents.namesOf(owner).self;
+  } catch {
+    // rootOf / namesOf 在调用者没有活跃运行时归属时会抛错；这里只做归属提示，不能打断通知主流程。
+    return false;
+  }
 }
 
 /** `reason.kind` 的运行时取值；拿不到字符串就按空值处理。 */

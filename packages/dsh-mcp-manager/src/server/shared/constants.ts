@@ -55,7 +55,7 @@ export const OFFICIAL_MCP_CLIENT_SPECIFIER = "@deepseek-ai/dsh-mcp-client";
 /**
  * 官方 dsh-mcp-client 在宿主日志面上的记录名（cordis 日志记录的 `name` 字段）。
  *
- * 换引擎后本插件拿不到官方的状态 API 与错误对象，官方「说了什么」只剩日志这一条通道；而
+ * 换引擎后本插件不依赖官方公开状态 API；日志仍是官方「说了什么」的主要原文通道，而
  * 每条官方日志都带 `mcp-client(<serverName>)` 前缀。落共享层是为了让归属判定与「交给官方的
  * serverName 就是我方 id」这条事实同源——散在消费方里就会随重构复制出第二份。
  */

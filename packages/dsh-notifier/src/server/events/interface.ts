@@ -11,8 +11,8 @@
 import type { EventsDeps } from "./deps.ts";
 import { eventListener } from "./impl/listen/index.ts";
 
-// 宿主事件面由组合根接到 Context 事件总线。
-export type { HostEventPort } from "./deps.ts";
+// 宿主事件面与 agent 注册表面：组合根照着接事件总线与 `ctx.agents`。
+export type { AgentRegistryPort, HostEventPort } from "./deps.ts";
 
 /** 装配事件订阅（组合根在 `apply` 期调用一次）。 */
 export function installEvents(deps: EventsDeps): void {

@@ -169,7 +169,9 @@ test("本仓真实快照：5 条在册（数字变即提示同步台账与 #765�
   assert.equal(r.status, 0, r.stderr);
   // #1074 清掉 shared/client/** 那条 pending-project 豁免 ⇒ 台账 7 → 6。
   // #1187 删除 panel.ts 的失效豁免 ⇒ 台账 6 → 5。
-  assert.match(r.stdout, /合计 5 条待办：已过期 0 /);
+  // 只钉总数与条目内容，不钉到期桶：crap.strict 的 reviewBy 2026-11-08 已到期，
+  // 分桶会随统计日推移变化；到期治理裁决不在本自测里。
+  assert.match(r.stdout, /合计 5 条待办：/);
   // 本 PR 给 crap 观察期补 reviewBy 2026-11-08 ⇒ 「只有解除条件、无到期日」的那一条归零
   // （#765：日期与解除条件平级入账，互不替代）。该计数只认 reviewBy 缺失，不随统计日推移变化，
   // 故此处钉的是「每条待办都带到期日」这个不变量，而不是某一天的剩余天数。

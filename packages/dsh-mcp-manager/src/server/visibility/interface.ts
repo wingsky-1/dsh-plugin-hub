@@ -11,7 +11,6 @@
  * `servers/dispatch` 的 `executeMcpCall(input)` 同一形态）——域间值边因此为零。
  */
 import type { AgentFace, LoggerPort } from "../shared/interface.ts";
-import type { ProjectUnit } from "../connection/runtime/interface.ts";
 
 /**
  * 事件面（组合根从 `faces.events` 递进来）。成员**全可选**：监听面缺失（假 ctx、宿主未合并
@@ -32,13 +31,15 @@ export interface VisibilityEventsPort {
 /**
  * `startAgentVisibility` 的全部实参。
  *
- * `units` 是**活**引用（`McpMiddleware.units`，公开字段），不是快照：restriction 会校验目标的
- * `restrictableNames`，名字不在活注册面里当场抛，故名单每次都要从活注册面现算。本域只读
- * `unit.connections[*].id`（注册名 `mcp__<id>__` 的前缀来源）。
+ * `isOwnedServerId` 是**活**判定（`McpMiddleware.ownsServerId`），不是快照：restriction 会校验
+ * 目标的 `restrictableNames`，名字不在活注册面里当场抛，故名单每次都要从活注册面现算。
+ * 本域只隐藏本插件 own 集合里的 `mcp__<id>__`；官方/兄弟插件直接装载的 `mcp__<serverName>__`
+ * 不归本包管，必须保持模型可见（共存边界）。
  */
 export interface StartAgentVisibilityArgs {
   readonly events: VisibilityEventsPort;
-  readonly units: ReadonlyMap<string, ProjectUnit>;
+  /** 注册名中段是否属于本插件装载的官方实例；官方 mcp__ 名恒为 false。 */
+  readonly isOwnedServerId: (id: string) => boolean;
   /** 活注册面上的全部注册名（组合根现读 `faces.tools.schemas()`，本域不缓存）。 */
   readonly registeredNames: () => readonly string[];
   readonly logger: LoggerPort;

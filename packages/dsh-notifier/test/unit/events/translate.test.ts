@@ -33,7 +33,7 @@ import {
   translateUserQuestion,
 } from "../../../src/server/events/impl/translate/index.ts";
 import type { Translation } from "../../../src/server/events/impl/translate/type.ts";
-import { makeLogger } from "../../helpers.ts";
+import { makeAgentRegistry, makeLogger } from "../../helpers.ts";
 
 /**
  * `translateSessionEvent` 会往状态机里记账（这正是它存在的理由），故每个用例后清一次:
@@ -154,7 +154,7 @@ describe("会话内事件：只记账，不产出", () => {
     expect(translateSessionEvent("s1", turnEndEvent(4)).ok).toBe(false);
 
     // 「记账」的唯一可观测出口：idle 判定读的就是这条推送来的证据，没记住就永远判不出完成。
-    agentStates.install({ logger: makeLogger() });
+    agentStates.install({ logger: makeLogger(), agents: makeAgentRegistry() });
     agentStates.observeStatus({ agent, status: "running" });
     expect(agentStates.observeStatus({ agent, status: "idle" })).toMatchObject({
       ok: true,

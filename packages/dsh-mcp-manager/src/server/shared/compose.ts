@@ -183,12 +183,14 @@ export function bindHost(ctx: HostContextPort): HostFaces {
         // 保持原服务。wrapper 自身的 apply 等官方 child ready 后才结算，故 handle.ready 仍代表
         // 官方实例 ready，而不是 facade 注册完成。wrapper fiber 同时拥有 facade 与 child，
         // dispose 时沿同一条 Cordis ownership 链一起撤销。
+        let statusFiber: unknown;
         const isolated = ctx.isolate("attachments");
         const fiber = isolated.plugin({
           name: "dsh-mcp-manager:guarded-mcp-client",
           async apply(inner: Context) {
             inner.provide("attachments", guardedAttachments(ctx));
             const child = inner.plugin(module as MountablePlugin, config);
+            statusFiber = child;
             await child.await();
           },
         });
@@ -196,6 +198,9 @@ export function bindHost(ctx: HostContextPort): HostFaces {
         const state = { disposed: false };
         const handle: MountedPlugin = {
           ready: fiber.await().then(() => undefined),
+          get statusFiber() {
+            return statusFiber;
+          },
           get disposed() {
             return state.disposed;
           },

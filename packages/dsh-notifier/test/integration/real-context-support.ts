@@ -264,6 +264,36 @@ export function fakeWebServer(
   return { service, routes, removals };
 }
 
+/** 假宿主 agent 注册表：只实现组合根读的两处（`get` 与 `isOwnedBy`）。 */
+export function fakeAgents(parent: Agent, child: Agent): Context["agents"] {
+  return {
+    get: (id: string) => (id === parent.id ? parent : undefined),
+    isOwnedBy: (id: string, owner: Agent) => id === child.id && owner === parent,
+  } as unknown as Context["agents"];
+}
+
+/** rc3 的 `agents`：`isOwnedBy` 已删除，只剩活体查询。 */
+export function fakeAgentsRc3(parent: Agent, _child: Agent): Context["agents"] {
+  return {
+    get: (id: string) => (id === parent.id ? parent : undefined),
+  } as unknown as Context["agents"];
+}
+
+/** rc3 的 `ctx.subagents`：parent 是根，child 是它的直接子成员。 */
+export function fakeSubagents(parent: Agent, child: Agent): unknown {
+  return {
+    rootOf: (agent: Agent) => {
+      if (agent === parent || agent === child) return parent;
+      throw new Error("UNAUTHORIZED");
+    },
+    namesOf: (agent: Agent) => {
+      if (agent === parent) return { self: "lead" };
+      if (agent === child) return { self: "kid", parent: "lead" };
+      throw new Error("UNAUTHORIZED");
+    },
+  };
+}
+
 /**
  * 日志出口：`LoggerService` 的公开扩展点，用它把 warn 收进数组。
  *

@@ -18,6 +18,7 @@ import {
   pillPlacement,
   primaryRowAction,
   rowRequestInit,
+  titlebarAvoidedTop,
   transformOriginFor,
   usesComposerSeat,
 } from "../../src/client/float/float.ts";
@@ -154,6 +155,73 @@ describe("float：锚点与终坐标", () => {
     expect(pillPlacement({ ...base, isLeft: false, isBottom: true })).toEqual({ x: 62, y: 172 });
     // 下边界过高时 clamp 到视口上缘 6px。
     expect(pillPlacement({ ...base, isLeft: true, isBottom: true, bottomEdge: 0 }).y).toBe(6);
+  });
+
+  it("titlebarAvoidedTop：仅 body 回退 + WCO 可见 + 相交时下压", () => {
+    const base = {
+      bodyFallback: true,
+      left: 900,
+      top: 8,
+      width: 80,
+      height: 24,
+      viewportHeight: 800,
+      overlay: {
+        visible: true,
+        getTitlebarAreaRect: () => ({ left: 800, top: 0, right: 1000, bottom: 32 }),
+      },
+    };
+    expect(titlebarAvoidedTop(base)).toBe(36);
+    // 非对话页以外的场景一律原样返回。
+    expect(titlebarAvoidedTop({ ...base, bodyFallback: false })).toBe(8);
+    expect(titlebarAvoidedTop({ ...base, overlay: { ...base.overlay, visible: false } })).toBe(8);
+    // 不相交（胶囊已位于标题栏下缘之下）不动。
+    expect(titlebarAvoidedTop({ ...base, top: 40 })).toBe(40);
+    // 无有效矩形 / 读口抛错时不动。
+    expect(
+      titlebarAvoidedTop({
+        ...base,
+        overlay: { ...base.overlay, getTitlebarAreaRect: () => undefined as never },
+      }),
+    ).toBe(8);
+    expect(
+      titlebarAvoidedTop({
+        ...base,
+        overlay: {
+          visible: true,
+          getTitlebarAreaRect: () => {
+            throw new Error("no rect");
+          },
+        },
+      }),
+    ).toBe(8);
+    expect(
+      titlebarAvoidedTop({
+        ...base,
+        overlay: {
+          visible: true,
+          getTitlebarAreaRect: () => ({ left: 0, top: 0, right: 0, bottom: 0 }),
+        },
+      }),
+    ).toBe(8);
+  });
+});
+
+describe("float：标题栏避让与空白会话", () => {
+  it("titlebarAvoidedTop：下压仍受视口底部 clamp 约束", () => {
+    expect(
+      titlebarAvoidedTop({
+        bodyFallback: true,
+        left: 10,
+        top: 8,
+        width: 40,
+        height: 20,
+        viewportHeight: 40,
+        overlay: {
+          visible: true,
+          getTitlebarAreaRect: () => ({ left: 0, top: 0, right: 100, bottom: 30 }),
+        },
+      }),
+    ).toBe(14);
   });
 
   it("isBlankSession：取不到会话面判非空白", () => {

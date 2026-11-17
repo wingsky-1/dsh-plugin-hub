@@ -240,9 +240,14 @@ call 放行 `@global` root（全局配置跨工作空间共享，语义成立）
 
 ## 运行时注入（registerServer.toolDefinitions）
 
-其他插件可经 `ctx.mcpManager.registerServer` 运行时注册 MCP 服务器（内存态不落盘，
+其他插件可经 `ctx.wsMcpManager.registerServer` 运行时注册 MCP 服务器（内存态不落盘，
 同名幂等）。注册入参支持可选 `toolDefinitions`（调用方封装工具定义，`ToolDefinition[]`，
 工具名用**裸名**）：
+
+服务名只认 `wsMcpManager`，本插件**不提供** `mcpManager` 别名；若官方或其他插件已占用
+`ctx.mcpManager`，两边各管各的服务名，不冲突也不报错。共存时同一 server 不要同时在官方
+客户端配置与本插件的 `mcp.json` 里重复配置——那会产生两套同名 `mcp__` 注册面，本插件只隐藏
+自己装载的实例，官方的 `mcp__*` 保持模型可见。
 
 - **有 `toolDefinitions`**：该服务器工具**全部用封装定义注册**——execute 来自调用方
   （调用方可先做预处理再内部转发底层命令），跳过远端 schema 投影与
@@ -256,7 +261,7 @@ call 放行 `@global` root（全局配置跨工作空间共享，语义成立）
 - 仅运行时注入面（runtimeRegistry）消费，不随 store 落盘、不随 mcpServers 导入透传。
 
 ```ts
-await ctx.mcpManager.registerServer({
+await ctx.wsMcpManager.registerServer({
   name: "my-mcp",
   transport: "stdio",
   command: "my-mcp-server",
@@ -286,7 +291,7 @@ await ctx.mcpManager.registerServer({
   避免把宿主机密隐式透传给 MCP 子进程；**用户在配置里显式声明的 `env` 原样传给子进程**
   （显式层在净化之后合并）——`env` 不是脱敏面，要隔离就别往里写凭据
 - **stdio 子进程继承宿主权限**：MCP 服务器命令在宿主进程权限下执行，
-  仅配置可信的服务器。信任边界：同进程插件注入（`ctx.mcpManager.registerServer`）
+  仅配置可信的服务器。信任边界：同进程插件注入（`ctx.wsMcpManager.registerServer`）
   与宿主同权限、不构成提权；**随仓库提交的项目级 `mcp.json` 才是需要你审慎对待的那一面**
 - **统计只落元数据**：debug 统计（`debug.callStats`）记录调用次数/时长/成败与渐进式披露
   漏斗；**搜索词只以 SHA-256 哈希桶落盘**（`h:<12 位 hex>`，空查询为 `<empty>`），旧版本

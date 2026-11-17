@@ -41,7 +41,7 @@ import {
 
 // I8①：单元层不得值引组合根 src/index.ts——管理器、中间层与健康路由改经各自域门面直取，
 // 组合根顶层那六张静态端口表由 helpers 以同实参、同顺序手装。驱动 apply() 的那两组用例
-// （ctx.mcpManager 服务面、apply 配置分支）已整段迁至 test/integration/apply-lifecycle.test.ts。
+// （ctx.wsMcpManager 服务面、apply 配置分支）已整段迁至 test/integration/apply-lifecycle.test.ts。
 const { McpManager } = await import("../../src/server/connection/orchestrator/interface.ts");
 
 const { McpMiddleware } = await import("../../src/server/connection/runtime/interface.ts");

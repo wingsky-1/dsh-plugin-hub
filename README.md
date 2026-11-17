@@ -33,13 +33,13 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
 
 ### 版本适配（只适配 rc）
 
-本插件集当前只适配 DeepSeek Harness `0.2.2-rc.1`（Cordis `4.1.0`）。
+本插件集当前只适配 DeepSeek Harness `0.2.2-rc.3`（Cordis `4.1.0`）。
 
-> `0.2.11` 对应以下 rc.1 基线，`0.2.10` 对应旧 rc.2 基线。安装前请确认目标插件版本已在 registry 发布，并与使用的 DSH 版本匹配。
+> `0.2.12` 对应 rc.3 基线，`0.2.11` 对应 rc.1 基线，`0.2.10` 对应旧 rc.2 基线。安装前请确认目标插件版本已在 registry 发布，并与使用的 DSH 版本匹配。
 
-- `pnpm-workspace.yaml` 的官方类型层 catalog 是权威版本事实源；本分支各包 peerDependencies 是维护流程生成的精确版本投影，锁定 `dsh 0.2.2-rc.1` 与 Cordis `4.1.0`；其他 DSH 版本不在本轮支持范围
-- 运行 DSH `0.2.2-rc.1` 要求 Node `>=24.9`；本仓本地测试直接用原生 type stripping 跑 TS 的 Node `>=23.6` 是开发工具门槛，两者不可混用
-- 升级顺序：先停止正在运行的旧 `dsh web` 并备份插件配置与会话数据，再把 DSH CLI 升级到 `0.2.2-rc.1`，然后通过 `dsh plugin ... update` 将插件更新到 `0.2.11`，最后启动并验收。发布或安装制品可以先于使用端升级，但旧 CLI 不能正常安装或加载新插件；不要用 `allow-version` 绕过 peer 校验
+- `pnpm-workspace.yaml` 的官方类型层 catalog 是权威版本事实源；本分支各包 peerDependencies 是维护流程生成的精确版本投影，锁定 `dsh 0.2.2-rc.3` 与 Cordis `4.1.0`；其他 DSH 版本不在本轮支持范围
+- 运行 DSH `0.2.2-rc.3` 要求 Node `>=24.9`；本仓本地测试直接用原生 type stripping 跑 TS 的 Node `>=23.6` 是开发工具门槛，两者不可混用
+- 升级顺序：先停止正在运行的旧 `dsh web` 并备份插件配置与会话数据，再把 DSH CLI 升级到 `0.2.2-rc.3`，然后通过 `dsh plugin ... update` 将插件更新到 `0.2.12`，最后启动并验收。发布或安装制品可以先于使用端升级，但旧 CLI 不能正常安装或加载新插件；不要用 `allow-version` 绕过 peer 校验
 - 每版的具体适配基线、破坏性变更与升级指南见 [Release Notes](docs/release-notes/)
 - catalog 更新前，不对 alpha、旧 runtime 或其他版本作兼容承诺
 
@@ -239,7 +239,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 - `@wingsky-1/dsh-worktree-sidebar`（把某个 git worktree 登记给当前会话的侧栏文件树）
   已不再维护：DSH 0.2.1-rc.2 提供不同语义的官方替代，迁移与退役说明见
   [docs/migrations/worktree-sidebar.md](docs/migrations/worktree-sidebar.md)。退役的是旧外部适配包；
-  DSH 官方可选 Git Worktrees bundle 在 `0.2.2-rc.1` 仍受支持，其 metadata 仍可按官方机制加载。
+  DSH 官方可选 Git Worktrees bundle 在 `0.2.2-rc.3` 仍受支持，其 metadata 仍可按官方机制加载。
 - `@wingsky-1/dsh-lan-proxy`（局域网 HTTP/HTTPS/WebSocket 转发、TLS、压缩与保活）
   已停止独立维护并退出当前源码树与聚合包：官方原生 LAN/TLS 覆盖了主要入口；native remote
   mux 已实际协商 `permessage-deflate`，并提供 Ping/不活跃终止，但旧包的逐路径 WS 白名单、
@@ -318,7 +318,7 @@ pnpm migrate:plugin-rows -- --home "$DSH_HOME" --apply
 <a id="开发与架构"></a><a id="user-content-开发与架构"></a>
 ## 开发与架构
 
-运行前提：DSH `0.2.2-rc.1` 要求 Node `>=24.9`。仓库开发和测试用原生 type stripping
+运行前提：DSH `0.2.2-rc.3` 要求 Node `>=24.9`。仓库开发和测试用原生 type stripping
 直跑 TS，工具门槛单独为 Node `>=23.6`；pnpm 要求 `>=11`。
 
 构建 / 契约 / 测试 / 打包命令、目录结构、宿主端与客户端写法规范，统一见

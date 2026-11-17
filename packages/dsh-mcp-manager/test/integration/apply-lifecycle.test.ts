@@ -12,7 +12,7 @@
  * - 组合根接线：mountServer 经宿主 loader 装载、id 进账本、六态投影、跨 root 同名各自成条、卸载复位
  * - apply 的升级链失败穿透（旧用户状态不可读 → fail-closed）
  * - 装配顺序（源码序锁定）：升级链 await 跑完才装读存储的域
- * - #767 笔 1a：ctx.mcpManager.getTools 行为判据（注册名 / 未知 server / 断开后）
+ * - #767 笔 1a：ctx.wsMcpManager.getTools 行为判据（注册名 / 未知 server / 断开后）
  * - 前端 POST /config 不会覆盖抹除已有的 debug 配置
  *
  * settings 注入与降级、配置分支、pre-step/disposer 三个自然职责段已拆至
@@ -37,10 +37,80 @@ import {
 // 它们（§8 矩阵：包产物入口是集成层的许可导入面）。
 const { apply, resolveDebugConfig } = await import("../../src/index.ts");
 const { McpManager } = await import("../../src/server/connection/orchestrator/interface.ts");
+import type { McpMiddleware } from "../../src/server/connection/runtime/interface.ts";
 import type { McpManagerService } from "../../src/shared/interface.ts";
 const { McpStore, saveDisabledTools } = await import("../../src/server/store/interface.ts");
 const { mountLedger, mountServer, releaseLifecycle } =
   await import("../../src/server/servers/lifecycle/interface.ts");
+
+/**
+ * 最小 apply 宿主：`provide` 捕获核心化服务；loader / plugin / tools.schemas 支撑一条
+ * 真装载链（官方 client 的 syncTools 在本夹具里由 OFFICIAL_MODULE.apply 代替）。
+ */
+async function appliedService(homeDir: string) {
+  const provided = new Map<string, unknown>();
+  const providedNames: string[] = [];
+  const schemas: FakeToolEntry[] = [];
+  const officialModule = {
+    name: "test:official",
+    // 真实引擎里这一步由官方 client 的 syncTools 做：把 `mcp__<serverName>__<tool>`
+    // 写进宿主注册表。六态投影的 hasTools 与 getTools 的注册面因此同源。
+    apply: (_pluginCtx: unknown, config: { serverName: string }) => {
+      schemas.push({
+        name: `mcp__${config.serverName}__echo`,
+        description: "回显给定的文本",
+      });
+    },
+  };
+  const ctx = {
+    logger: { warn: () => {}, info: () => {}, error: () => {}, exporter: () => () => {} },
+    tools: { register: () => () => {}, schemas: () => schemas },
+    webServer: { register: () => () => {} },
+    systemPrompt: { section: () => () => {} },
+    inject: () => () => {},
+    on: () => () => {},
+    effect: (fn: () => unknown) => fn(),
+    provide: (serviceName: string, service: unknown) => {
+      providedNames.push(serviceName);
+      provided.set(serviceName, service);
+    },
+    get: (serviceName: string) =>
+      serviceName === "loader" ? { import: async () => officialModule } : provided.get(serviceName),
+  };
+  Object.assign(ctx, {
+    isolate: () => ctx,
+    plugin: fakePluginBridge(ctx, () => {}),
+  });
+  const store = new McpStore(join(homeDir, "mcp.json"));
+  store.data = { version: 1, servers: [] };
+  await store.save();
+  // 残缺宿主（只实现装配触达面）：按接缝收窄，装配语义不变。
+  await apply(ctx as unknown as Context, {
+    storePath: store.path,
+    announceToAgent: false,
+    announceCatalog: false,
+  });
+  // 提供方挂载的真服务（行为面由本组用例钉住），此处取其类型面。
+  return {
+    ctx: ctx as unknown as Context,
+    provided,
+    providedNames,
+    svc: provided.get("wsMcpManager") as McpManagerService,
+    schemas,
+  };
+}
+
+/** 起一台全局服务器并等它在池里拿到 id（单池：进 @global 单元）。 */
+async function connectedService(svc: McpManagerService) {
+  await svc.registerServer({
+    name: "g1",
+    transport: "stdio",
+    command: "dsh-noop-cmd",
+    reconnect: { enabled: false },
+    enabled: true,
+  });
+  await pollUntil("池内条目拿到 id 且注册面命中", () => svc.getTools("g1").length > 0);
+}
 
 afterEach(() => {
   releaseTempDirs();
@@ -61,12 +131,27 @@ describe("D8：mcp__ 直呼命中禁用表 → deny", () => {
     // 预置工具级禁用表（manager.userStatePath = DSH_HOME/dsh-mcp-user-state.json）。
     const disabled = new Map([["@global", new Map([["svc", new Set(["use_t"])]])]]);
     await saveDisabledTools(join(dir, "dsh-mcp-user-state.json"), disabled);
-    await apply(ctx as unknown as Context, { enabled: true, storePath: join(dir, "mcp.json") });
+    let captured: McpMiddleware | undefined;
+    const original = McpManager.prototype.initMiddleware;
+    McpManager.prototype.initMiddleware = async function (this: InstanceType<typeof McpManager>) {
+      const mw = await original.call(this);
+      captured = mw;
+      return mw;
+    };
+    try {
+      await apply(ctx as unknown as Context, { enabled: true, storePath: join(dir, "mcp.json") });
+    } finally {
+      McpManager.prototype.initMiddleware = original;
+    }
     const restore = () => {
       if (prevHome === undefined) delete process.env.DSH_HOME;
       else process.env.DSH_HOME = prevHome;
     };
-    return { guards, restore };
+    return {
+      guards,
+      restore,
+      own: (id: string) => captured?.ownServerId(id),
+    };
   }
 
   it("D8：pre-execute guard 已挂载", async () => {
@@ -80,8 +165,9 @@ describe("D8：mcp__ 直呼命中禁用表 → deny", () => {
   });
 
   it("D8：mcp__ 直呼命中禁用表 → deny", async () => {
-    const { guards, restore } = await applyOffModeWithDisabledTool();
+    const { guards, restore, own } = await applyOffModeWithDisabledTool();
     try {
+      own("svc");
       // guard 已挂载由上一用例保证（同一装配器），此处非空。
       const guard = guards.get("tools/pre-execute")!;
       const decision = (await guard(
@@ -89,6 +175,21 @@ describe("D8：mcp__ 直呼命中禁用表 → deny", () => {
         async () => ({ kind: "allow" }),
       )) as { kind: unknown };
       expect(decision.kind).toBe("deny");
+    } finally {
+      restore();
+    }
+  });
+
+  it("D8：官方 mcp__ 名不在本地 own 集合 → 放行（共存边界）", async () => {
+    const { guards, restore, own } = await applyOffModeWithDisabledTool();
+    try {
+      own("svc");
+      const guard = guards.get("tools/pre-execute")!;
+      const decision = (await guard(
+        { name: "mcp__official__use_t", agent: { session: { header: {} } } },
+        async () => ({ kind: "allow" }),
+      )) as { kind: unknown };
+      expect(decision.kind).toBe("allow");
     } finally {
       restore();
     }
@@ -272,7 +373,7 @@ describe("装配顺序：升级链 await 跑完才装读存储的域", () => {
   });
 });
 
-describe("#767 笔 1a：ctx.mcpManager.getTools 行为判据", () => {
+describe("#767 笔 1a：ctx.wsMcpManager.getTools 行为判据", () => {
   let prevHome: string | undefined;
   let homeDir: string;
   beforeEach(() => {
@@ -285,69 +386,8 @@ describe("#767 笔 1a：ctx.mcpManager.getTools 行为判据", () => {
     else process.env.DSH_HOME = prevHome;
   });
 
-  /**
-   * 最小 apply 宿主：`provide` 捕获核心化服务；loader / plugin / tools.schemas 支撑一条
-   * 真装载链（官方 client 的 syncTools 在本夹具里由 OFFICIAL_MODULE.apply 代替）。
-   */
-  async function appliedService() {
-    const provided = new Map<string, unknown>();
-    const schemas: FakeToolEntry[] = [];
-    const officialModule = {
-      name: "test:official",
-      // 真实引擎里这一步由官方 client 的 syncTools 做：把 `mcp__<serverName>__<tool>`
-      // 写进宿主注册表。六态投影的 hasTools 与 getTools 的注册面因此同源。
-      apply: (_pluginCtx: unknown, config: { serverName: string }) => {
-        schemas.push({
-          name: `mcp__${config.serverName}__echo`,
-          description: "回显给定的文本",
-        });
-      },
-    };
-    const ctx = {
-      logger: { warn: () => {}, info: () => {}, error: () => {}, exporter: () => () => {} },
-      tools: { register: () => () => {}, schemas: () => schemas },
-      webServer: { register: () => () => {} },
-      systemPrompt: { section: () => () => {} },
-      inject: () => () => {},
-      on: () => () => {},
-      effect: (fn: () => unknown) => fn(),
-      provide: (serviceName: string, service: unknown) => {
-        provided.set(serviceName, service);
-      },
-      get: (serviceName: string) =>
-        serviceName === "loader" ? { import: async () => officialModule } : undefined,
-    };
-    Object.assign(ctx, {
-      isolate: () => ctx,
-      plugin: fakePluginBridge(ctx, () => {}),
-    });
-    const store = new McpStore(join(homeDir, "mcp.json"));
-    store.data = { version: 1, servers: [] };
-    await store.save();
-    // 残缺宿主（只实现装配触达面）：按接缝收窄，装配语义不变。
-    await apply(ctx as unknown as Context, {
-      storePath: store.path,
-      announceToAgent: false,
-      announceCatalog: false,
-    });
-    // 提供方挂载的真服务（行为面由本组用例钉住），此处取其类型面。
-    return { svc: provided.get("mcpManager") as McpManagerService, schemas };
-  }
-
-  /** 起一台全局服务器并等它在池里拿到 id（单池：进 @global 单元）。 */
-  async function connectedService(svc: McpManagerService) {
-    await svc.registerServer({
-      name: "g1",
-      transport: "stdio",
-      command: "dsh-noop-cmd",
-      reconnect: { enabled: false },
-      enabled: true,
-    });
-    await pollUntil("池内条目拿到 id 且注册面命中", () => svc.getTools("g1").length > 0);
-  }
-
   it("① 中间层接管的服务器返回非空且逐字是注册名（mcp__<id>__<tool>）", async () => {
-    const { svc } = await appliedService();
+    const { svc } = await appliedService(homeDir);
     await connectedService(svc);
     const tools = svc.getTools("g1");
     // 旧数据源（直连账本 toolMeta）只由已退役的那条路径填充 → 这里会恒返回 []。
@@ -360,7 +400,7 @@ describe("#767 笔 1a：ctx.mcpManager.getTools 行为判据", () => {
   });
 
   it("① 否定：返回的不是裸名（改成裸名即红）", async () => {
-    const { svc } = await appliedService();
+    const { svc } = await appliedService(homeDir);
     await connectedService(svc);
     const names = svc.getTools("g1").map((tool) => tool.name);
     expect(names, "裸名口径（summary().tools / 目录读口）不在这里返回").not.toContain("echo");
@@ -368,15 +408,61 @@ describe("#767 笔 1a：ctx.mcpManager.getTools 行为判据", () => {
   });
 
   it("② 未知 server 返回 []", async () => {
-    const { svc } = await appliedService();
+    const { svc } = await appliedService(homeDir);
     expect(svc.getTools("ghost")).toEqual([]);
   });
 
   it("② 未连接（断开后）返回 []", async () => {
-    const { svc } = await appliedService();
+    const { svc } = await appliedService(homeDir);
     await connectedService(svc);
     await svc.disconnect("g1");
     expect(svc.getTools("g1"), "断开后条目已拆 → 不再返回工具").toEqual([]);
+  });
+});
+
+describe("#1196：wsMcpManager 幂等提供与官方 mcpManager 共存", () => {
+  let prevHome: string | undefined;
+  let homeDir: string;
+  beforeEach(() => {
+    prevHome = process.env.DSH_HOME;
+    homeDir = makeTempDir("dsh-mcp-mgr2gt-");
+    process.env.DSH_HOME = homeDir;
+  });
+  afterEach(() => {
+    if (prevHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prevHome;
+  });
+
+  it("#1196：重复 apply 复用已提供的 wsMcpManager，不重建服务", async () => {
+    const { ctx, provided, providedNames, svc } = await appliedService(homeDir);
+    const providesBefore = providedNames.length;
+    expect(providedNames).toContain("wsMcpManager");
+    const serviceBefore = provided.get("wsMcpManager");
+    await apply(ctx, { storePath: join(homeDir, "mcp.json") });
+    expect(providedNames).toHaveLength(providesBefore);
+    expect(provided.get("wsMcpManager")).toBe(serviceBefore);
+    expect(svc.getTools("ghost")).toEqual([]);
+  });
+
+  it("官方已占 ctx.mcpManager 时不冲突，也不提供 mcpManager 别名", async () => {
+    const provided = new Map<string, unknown>();
+    const official = { owner: "official" };
+    const ctx = baseCtx({
+      provide: (name: string, service: unknown) => {
+        provided.set(name, service);
+      },
+      get: (name: string) => {
+        if (name === "loader") return { import: async () => ({ apply: () => {} }) };
+        if (name === "mcpManager") return official;
+        return undefined;
+      },
+    });
+    await apply(ctx as unknown as Context, {
+      enabled: false,
+      storePath: join(homeDir, "mcp.json"),
+    });
+    expect(provided.has("wsMcpManager")).toBe(true);
+    expect(provided.has("mcpManager")).toBe(false);
   });
 });
 

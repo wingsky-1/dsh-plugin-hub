@@ -18,6 +18,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   AgentDisposedPayload,
   AgentErrorPayload,
+  AgentRegistryPort,
   AgentStatusPayload,
   AgentTurnStoppingPayload,
   EventsDeps,
@@ -25,7 +26,7 @@ import type {
   NotifyRequest,
 } from "../../../src/server/events/deps.ts";
 import { installEvents, releaseEvents } from "../../../src/server/events/interface.ts";
-import { makeLogger } from "../../helpers.ts";
+import { makeAgentRegistry, makeLogger } from "../../helpers.ts";
 
 afterEach(() => {
   releaseEvents();
@@ -154,12 +155,13 @@ function makeSession(
 }
 
 /** 装配一次 events 域，交出观测面。 */
-function assemble() {
+function assemble(options: { agents?: AgentRegistryPort } = {}) {
   const events = makeHostEvents();
   const logger = makeLogger();
   const submitted: NotifyRequest[] = [];
   const deps: EventsDeps = {
     events: events.port,
+    agents: options.agents ?? makeAgentRegistry(),
     logger,
     pipeline: {
       submit: (request) => {
@@ -348,27 +350,36 @@ describe("完成判定：running 起记、idle 结算", () => {
   });
 });
 
-describe("子代理归属：origin 控制 main 与 subagent 的 kind 分流", () => {
+describe("子代理归属：main 与 subagent 的 kind 分流", () => {
   it("origin=subagent 的会话报 subagent-done", () => {
     const { events, submitted } = assemble();
-    const session = makeSession("s-origin", {
-      title: "子任务",
-      header: { parentSession: "p-owner", origin: "subagent" },
-    });
+    const session = makeSession("s-origin", { title: "子任务", header: { origin: "subagent" } });
     setStatus(events, session, "running");
     session.endTurn(1);
     setStatus(events, session, "idle");
-    expect(submitted.map((request) => request.kind)).toEqual(["subagent-done"]);
+    expect(submitted[0]!.kind).toBe("subagent-done");
     expect(submitted[0]!.body).toContain("子任务「子任务」已完成");
   });
 
-  it("只有 parentSession 的普通 fork 仍走主任务 done 路径", () => {
+  it("父 agent 在册且确由它创建时报 subagent-done（运行时归属是 header 之外的第二个信号）", () => {
+    const parent = makeSession("p-owner");
+    const child = makeSession("s-owned", { header: { parentSession: "p-owner" } });
+    const { events, submitted } = assemble({
+      agents: makeAgentRegistry({ live: [parent.agent], owned: [["s-owned", "p-owner"]] }),
+    });
+    setStatus(events, child, "running");
+    child.endTurn(1);
+    setStatus(events, child, "idle");
+    expect(submitted[0]!.kind).toBe("subagent-done");
+  });
+
+  it("父 agent 已消亡（查不到）时判主任务：宁可多报一条 done，也不静默用户自己的任务", () => {
     const { events, submitted } = assemble();
-    const fork = makeSession("s-fork", { header: { parentSession: "p-owner" } });
-    setStatus(events, fork, "running");
-    fork.endTurn(1);
-    setStatus(events, fork, "idle");
-    expect(submitted.map((request) => request.kind)).toEqual(["done"]);
+    const child = makeSession("s-orphan", { header: { parentSession: "p-gone" } });
+    setStatus(events, child, "running");
+    child.endTurn(1);
+    setStatus(events, child, "idle");
+    expect(submitted[0]!.kind).toBe("done");
   });
 });
 

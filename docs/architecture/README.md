@@ -61,7 +61,7 @@ flowchart LR
   `webServer` / `tools` / `settings` / `connection` 等官方服务，注册路由与事件监听；
 - **客户端**（`exports "./client"` → `lib/client.js`）：干净模块（`apply(ctx)` +
   `inject`），构建期内联样式与依赖，通过 `__DSH_ROUTES__` 拿到真实路由表；
-- **依赖关系**：各插件彼此独立（`dsh-mcp-manager` 提供的 `ctx.mcpManager` 为可选消费面，
+- **依赖关系**：各插件彼此独立（`dsh-mcp-manager` 提供的 `ctx.wsMcpManager` 为可选消费面，
   无插件对其强依赖）；
 - `dsh-plugins-all` 是聚合包：dependencies 拉齐全部子包 + 聚合 cordis patch
   （`scripts/gate/aggregate.ts` 自动生成，禁止手改）。

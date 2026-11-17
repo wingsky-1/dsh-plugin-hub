@@ -1004,12 +1004,21 @@ describe("G1 常量存在 + 源码注释附官方定价 URL 与核实日期", ()
     expect(PEAK_LOOKAHEAD_DAYS).toBe(16);
   });
 
-  it("节假日表为 2026 全年 33 天", () => {
-    expect(CHINA_PUBLIC_HOLIDAYS_UTC.size).toBe(33);
+  it("节假日表为 2026-2027 共 62 天（2026 33 + 2027 29）", () => {
+    expect(CHINA_PUBLIC_HOLIDAYS_UTC.size).toBe(62);
+    expect([...CHINA_PUBLIC_HOLIDAYS_UTC].filter((d) => d.startsWith("2027-"))).toHaveLength(29);
   });
 
-  it("注释注明年份覆盖范围", () => {
+  it("2027 调休上班日不收录", () => {
+    for (const d of ["2027-01-31", "2027-02-14", "2027-05-08", "2027-09-26", "2027-10-09"]) {
+      expect(CHINA_PUBLIC_HOLIDAYS_UTC.has(d)).toBe(false);
+    }
+  });
+
+  it("注释注明年份覆盖范围（保留 2026，新增 2027 起止）", () => {
     expect(src.includes("2026-01-01")).toBeTruthy();
+    expect(src.includes("2027-01-01")).toBeTruthy();
+    expect(src.includes("2027-10-07")).toBeTruthy();
   });
 
   it("注释注明每年 Q4 更新次年表", () => {
@@ -1185,6 +1194,24 @@ describe("G4d utcDateKey / isHolidayUtc 基础", () => {
 
   it("默认集已冻结（勿变异）", () => {
     expect(Object.isFrozen(CHINA_PUBLIC_HOLIDAYS_UTC)).toBe(true);
+  });
+});
+
+describe("G4f 2027 节假日表行为", () => {
+  it("春节首日 02-05 周五 02:00 UTC 谷", () => {
+    expect(isPeakUtc(utc(2027, 2, 5, 2, 0))).toBe(false);
+  });
+
+  it("端午单日 06-09 周三 07:00 UTC 谷", () => {
+    expect(isPeakUtc(utc(2027, 6, 9, 7, 0))).toBe(false);
+  });
+
+  it("国庆后首个工作日 10-08 周五 01:00 UTC 峰", () => {
+    expect(isPeakUtc(utc(2027, 10, 8, 1, 0))).toBe(true);
+  });
+
+  it("春节最长谷段约 10.625 天：02-04 10:00 UTC 的下一次开峰为 02-15 01:00", () => {
+    expect(nextPeakTransition(utc(2027, 2, 4, 10, 0)).at).toBe(utc(2027, 2, 15, 1, 0));
   });
 });
 

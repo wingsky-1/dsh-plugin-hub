@@ -4,7 +4,7 @@
 /**
  * mcp-manager-service 契约测试编译面接线（issue #476 service-contract；#845 收全面）。
  *
- * 为什么存在：packages/dsh-mcp-manager/src/shared/service.ts 是 ctx.mcpManager 服务
+ * 为什么存在：packages/dsh-mcp-manager/src/shared/service.ts 是 ctx.wsMcpManager 服务
  * 类型面的单一事实源（#767 B1.5b 起；此前在仓库级 shared/），但提供方包的主
  * tsconfig（include src/**）不编译 test/，
  * \`pnpm typecheck\`/\`pnpm build\` 的 tsc 面到不了契约测试文件；而 \`pnpm test\`/

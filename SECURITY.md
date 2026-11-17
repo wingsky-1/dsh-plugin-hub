@@ -6,9 +6,9 @@
 
 ## 支持的版本（Supported Versions）
 
-> 本文件描述**本分支/下一适配版本**的 rc.1 基线；npm 已发布的 `0.2.10` 仍属于旧 rc.2 基线。源码版本号保持 `0.2.10`，正式发布号另行确定。
+> 本文件描述 `0.2.12` 的 rc.3 基线；npm 已发布的 `0.2.11` 锚定 rc.1 基线，`0.2.10` 属于旧 rc.2 基线。源码版本号为 `0.2.12`，实际发布状态以 registry 与维护者 tag 为准。
 
-本插件集下一适配版本面向 DeepSeek Harness `0.2.2-rc.1`（Cordis `4.1.0`）。适配基线的权威版本事实源是
+本插件集 `0.2.12` 面向 DeepSeek Harness `0.2.2-rc.3`（Cordis `4.1.0`）。适配基线的权威版本事实源是
 `pnpm-workspace.yaml` 的 catalog；各包 peerDependencies 是由维护流程生成的精确版本投影；
 catalog 更新前，不承诺 alpha、旧 runtime 或其他 DSH 版本的兼容与安全修复。
 

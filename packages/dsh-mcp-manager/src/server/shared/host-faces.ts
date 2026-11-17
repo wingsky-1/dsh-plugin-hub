@@ -103,8 +103,8 @@ export type RegisterPort = Pick<Context["webServer"], "register">;
 /**
  * 宿主工具注册表（`ctx.tools`）：只取注册与**注册面查询**两样。
  *
- * `schemas` 是六态投影里唯一能观测「已连上」的输入面（设计 §3.1 输入面 B）：官方
- * dsh-mcp-client 不暴露任何状态 API，工具注册面是它留给外界的唯一正向证据。两样都是活能力
+ * `schemas` 是旧宿主/夹具上六态投影能观测「已连上」的输入面（设计 §3.1 输入面 B）；
+ * rc.3 起另有内部状态句柄，但目录与可见面仍以工具注册面为正向证据。两样都是活能力
  * （每次调用现读宿主注册表），不是装配期快照——注册表会随服务器连接与断开变化。
  */
 export type ToolsPort = Pick<Context["tools"], "register" | "schemas">;
@@ -170,8 +170,8 @@ export interface LogRecord {
 /**
  * 宿主日志面：把「日志导出器」这一条能力递进域里。
  *
- * 为什么需要它（换引擎后才有）：官方 dsh-mcp-client 不暴露任何状态 API，成功连接零日志，
- * 失败与放弃重连才说话——这些原话是本插件唯一能拿到的错因，而宿主默认既不打印也不落盘
+ * 为什么需要它（换引擎后才有）：官方成功连接零日志，失败与放弃重连才说话——这些原话是
+ * 本插件拿到诊断细节的主要通道（rc.3 的状态句柄只给摘要），而宿主默认既不打印也不落盘
  * （实测：dsh.log 只有一行 URL，shipped web-app 无日志消费者）。没有这条面，首连失败对
  * 用户就是静默的。
  *
@@ -196,6 +196,33 @@ export interface OfficialPluginModule {
   readonly inject?: readonly string[];
   readonly apply?: (ctx: unknown, config: unknown) => unknown;
   readonly Config?: unknown;
+  /**
+   * 官方 rc.3 起的连接状态读口：按官方实例自己的 Fiber 取稳定状态单元。
+   * 旧版本没有该导出时保持 undefined，生命周期退回既有的注册面投影。
+   */
+  readonly connectionStatusOf?: (fiber: unknown) => McpConnectionStatusHandle | undefined;
+}
+
+/** 官方连接状态的最小投影（本包只读 state / connectedAt / lastError / reason）。 */
+export interface McpConnectionStatus {
+  readonly state:
+    "closed" | "waiting-credentials" | "connecting" | "connected" | "reconnecting" | "failed";
+  readonly connectedAt?: number;
+  readonly lastError?: string;
+  readonly reason?: "gave-up" | "reconnect-disabled" | "unclosed-generation";
+}
+
+/** 官方一次代际清理的结算（transport 关闭与本地清理分开报告）。 */
+export interface McpCloseResult {
+  readonly closeConfirmed: boolean;
+  readonly cleanupError?: string;
+}
+
+/** 官方连接状态单元：当前值、清理结算、变更订阅。 */
+export interface McpConnectionStatusHandle {
+  current(): McpConnectionStatus;
+  closure(): McpCloseResult;
+  onChange(callback: (status: McpConnectionStatus) => void | Promise<void>): () => void;
 }
 
 /**
@@ -210,6 +237,11 @@ export interface MountedPlugin {
    * `failOnStartupError: false` 下即使首连失败也让 `apply` 正常 resolve。
    */
   readonly ready: Promise<void>;
+  /**
+   * 官方插件实例自己的 Fiber / 句柄（内部嫁接 connectionStatusOf 用）。
+   * 对外服务面不暴露；旧 loader 夹具没有该字段时按「无状态面」降级。
+   */
+  readonly statusFiber?: unknown;
   /** 是否已 dispose：晚到的 ready 结算据此判断还能不能改状态（对齐现有代际守卫语义）。 */
   readonly disposed: boolean;
   /** 释放：官方 `apply` 里注册的 effect 会断开连接、注销工具、释放 serverName 预留。 */
