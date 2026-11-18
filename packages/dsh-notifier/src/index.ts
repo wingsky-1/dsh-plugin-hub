@@ -3,7 +3,6 @@
  * 交付的是能力对象而非装配期快照——设置是活的，快照看起来与实时读取一模一样。
  */
 import type { Context } from "@deepseek-ai/cordis";
-import type { Agent } from "@deepseek-ai/dsh-agent";
 import type {
   LOCALE_SETTINGS_NAMESPACE as HostLocaleNamespace,
   LOCALE_PREFERENCE_FIELD as HostLocalePreferenceField,
@@ -17,7 +16,7 @@ import * as apiApi from "./server/api/interface.ts";
 import * as channelsApi from "./server/channels/interface.ts";
 import * as configApi from "./server/config/interface.ts";
 import * as eventsApi from "./server/events/interface.ts";
-import type { AgentRegistryPort, HostEventPort } from "./server/events/interface.ts";
+import type { HostEventPort } from "./server/events/interface.ts";
 import * as pipelineApi from "./server/pipeline/interface.ts";
 import type { OutgoingFrame } from "./server/pipeline/interface.ts";
 import type { LegacySettingsFace } from "./server/upgrade/deps.ts";
@@ -133,8 +132,6 @@ interface HostPort {
   /** 宿主路由注册口：只有组合根够得着 `ctx.webServer`。 */
   readonly register: (route: WebRoute) => () => void;
   readonly events: HostEventPort;
-  /** 宿主 agent 注册表：子代理归属判定要它。 */
-  readonly agents: AgentRegistryPort;
   /**
    * 宿主 settings 服务：0.2.3 把配置存在那里，新架构搬走后仍需用它作低优先级兜底。
    * 只声明本域要用的 `describe`——正式历史来源由 upgrade 域直接读取 DSH_HOME 双文件。
@@ -164,9 +161,6 @@ function bindHost(ctx: Context): HostPort {
 
   const remoteAdmission = liveConnectionAdmission(ctx);
   const remotePeerAdmission = liveConnectionPeerAdmission(ctx);
-  type LegacyOwnership = Pick<AgentRegistryPort, "isOwnedBy">;
-  const officialAgents = ctx.get("agents", false) as unknown as LegacyOwnership | undefined;
-  const officialIsOwnedBy = officialAgents?.isOwnedBy;
 
   return {
     logger: ctx.logger,
@@ -263,22 +257,9 @@ function bindHost(ctx: Context): HostPort {
           GLOBAL_LISTEN,
         ),
     },
-    // 宿主 agent 注册表：子代理归属判定的第二个信号。查不到与查得到分开报，怎么理解是域的事。
-    // rc3 已删除 `agents.isOwnedBy`，故这里 duck-type；缺位时由 rc3 的 `subagents` 树关系回退。
-    agents: {
-      lookup: (id) => {
-        const agent = ctx.get("agents", false)?.get(id);
-        return agent === undefined ? { found: false } : { found: true, agent };
-      },
-      // rc3 没有 isOwnedBy：不暴露这个可选方法，域才会走 subagents 回退，而不是收到一个恒 false 的假探针。
-      ...(typeof officialIsOwnedBy === "function"
-        ? {
-            isOwnedBy: (id: Parameters<AgentRegistryPort["lookup"]>[0], owner: Agent) =>
-              officialIsOwnedBy.call(officialAgents, id, owner) === true,
-          }
-        : {}),
-      subagents: ctx.get("subagents", false) as AgentRegistryPort["subagents"],
-    },
+    // 宿主 agent 注册表此前在这里被读成 `agents.isOwnedBy` + `ctx.subagents` 两个归属探针。
+    // isOwnedBy 在 rc.3 起已从宿主服务面消失，ctx.subagents 的树关系要求父 agent 保持活跃；
+    // 子代理判定改读会话 header 的持久化谱系（origin / delegationDepth），组合根不再触碰 agent 注册表。
   };
 }
 
@@ -329,7 +310,6 @@ async function assemble(
   // 4. 事件：请求一律产出，去留由裁决层决定——开关会在本域看不见的地方被改。
   eventsApi.installEvents({
     events: host.events,
-    agents: host.agents,
     logger: host.logger,
     pipeline: pipelineApi,
     readLocale: host.readLocale,

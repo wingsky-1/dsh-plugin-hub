@@ -60,7 +60,7 @@
 | config | 同步加载用户配置 | logger；频道参数类型引用 channels，不是运行时投递依赖 |
 | stores | 历史与频道状态 | config.readConfig（按需读保留期） |
 | pipeline | 唯一裁决与投递编排 | config.readConfig；stores.appendHistory/recordStatus；channels.deliver；FrameBus.emit |
-| events | 七项订阅与完成状态机 | pipeline.submit；宿主事件与 agent 注册表 |
+| events | 七项订阅与完成状态机 | pipeline.submit；宿主事件（子代理谱系读会话 header） |
 | sdk | 服务面与动态 kind 管理 | config.readConfig/writeConfig；pipeline.isBuiltinKind/submit；expose.provide |
 | api | 最后挂八条端点与 SSE | config 读写；stores 查询/清空；pipeline.submit；sdk 清单/确认；channels 只读探测；FrameBus.onFrame |
 | channels | 无域级 install，投递与能力探测 | 无其它功能域依赖；系统执行端口在 impl/system/deps.ts；releaseSoundTemps 收音频目录 |

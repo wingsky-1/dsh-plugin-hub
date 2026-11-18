@@ -62,7 +62,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 `compression: gzip` 配置面覆盖，不再随全家桶分发。此前单独安装过 dsh-gzip 的用户
 升级后请执行 `dsh plugin --profile web remove @wingsky-1/dsh-gzip` 卸载。
 
-`@wingsky-1/dsh-lan-proxy` 已退役（#1159），不再随全家桶分发：DSH `0.2.2-rc.3`
+`@wingsky-1/dsh-lan-proxy` 已退役（#1159），不再随全家桶分发：DSH `0.2.2-rc.5`
 原生入口提供具体 LAN 地址 bind、TLS、Host/Origin 与 token/session 身份准入，但旧包的
 代理层改写、Brotli、WS 桥接/保活和本地 CA 管理没有等价承诺。插件短请求与新增长流现在
 分别依赖官方 `requestRejection` 身份准入和 admitted Peer 生命周期；逐插件隔离验证完成前

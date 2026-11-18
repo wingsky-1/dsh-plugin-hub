@@ -33,7 +33,7 @@ import {
   translateUserQuestion,
 } from "../../../src/server/events/impl/translate/index.ts";
 import type { Translation } from "../../../src/server/events/impl/translate/type.ts";
-import { makeAgentRegistry, makeLogger } from "../../helpers.ts";
+import { makeLogger } from "../../helpers.ts";
 
 /**
  * `translateSessionEvent` 会往状态机里记账（这正是它存在的理由），故每个用例后清一次:
@@ -55,12 +55,12 @@ function turnEndEvent(turn: number): SessionEvent {
   } as unknown as SessionEvent;
 }
 
-/** 假 agent：只露出被读的两处（`id` 与 `session`）。 */
-function makeAgent(id: string, title?: string): Agent {
+/** 假 agent：只露出被读的三处（`id`、`session.header` 与 `session.snapshotEvents()`）。 */
+function makeAgent(id: string, title?: string, header: Record<string, unknown> = {}): Agent {
   const events = title === undefined ? [] : [titleEvent(title)];
   return {
     id,
-    session: { header: {}, snapshotEvents: () => events },
+    session: { header, snapshotEvents: () => events },
   } as unknown as Agent;
 }
 
@@ -154,7 +154,7 @@ describe("会话内事件：只记账，不产出", () => {
     expect(translateSessionEvent("s1", turnEndEvent(4)).ok).toBe(false);
 
     // 「记账」的唯一可观测出口：idle 判定读的就是这条推送来的证据，没记住就永远判不出完成。
-    agentStates.install({ logger: makeLogger(), agents: makeAgentRegistry() });
+    agentStates.install({ logger: makeLogger() });
     agentStates.observeStatus({ agent, status: "running" });
     expect(agentStates.observeStatus({ agent, status: "idle" })).toMatchObject({
       ok: true,
@@ -187,6 +187,25 @@ describe("会话内事件：只记账，不产出", () => {
     expect(() => agentStates.observeStatus({ agent, status: "idle" })).toThrow(
       /^dsh-notifier: events 域状态机尚未装配$/u,
     );
+  });
+});
+
+// rc.5 起子代理判定改读 header 的持久化谱系（origin / delegationDepth），运行时归属探针不再参与。
+// 这几形态是用户看得见的 kind 分流的全部判据面：谱系在→子代理完成；谱系不在（含只剩历史 fork
+// 残留的 parentSession、空 header）→主任务完成。
+describe("子代理归属：header 谱系的三种形态", () => {
+  it.each([
+    ["origin=subagent", { origin: "subagent" }, "subagent-done"],
+    ["delegationDepth=1", { delegationDepth: 1 }, "subagent-done"],
+    ["delegationDepth=0（顶层会话）", { delegationDepth: 0 }, "done"],
+    ["只有 parentSession（历史 fork 残留）", { parentSession: "p-live" }, "done"],
+    ["header 是空对象", {}, "done"],
+  ] as const)("running → rememberTurnEnd → idle：%s 判 %s", (_label, header, kind) => {
+    const agent = makeAgent("sub-kind", "子任务", header);
+    agentStates.install({ logger: makeLogger() });
+    agentStates.observeStatus({ agent, status: "running" });
+    agentStates.rememberTurnEnd(agent.id, { turn: 1, kind: "completed" });
+    expect(agentStates.observeStatus({ agent, status: "idle" })).toMatchObject({ ok: true, kind });
   });
 });
 

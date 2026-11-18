@@ -52,9 +52,9 @@ built-in skill and becomes available to all sessions in the profile (check with
   `@deepseek-ai/dsh-web-app` (built-in bundles are resolved by name from the dsh install
   directory, not via npm);
 - **One-shot script** `skills/dsh-verify-isolated/scripts/verify-isolated.mjs`
-  (Node implementation; the driver needs Node >=22, while the target DSH `0.2.2-rc.3`
+  (Node implementation; the driver needs Node >=22, while the target DSH `0.2.2-rc.5`
   runtime requires Node >=24.9): validate the dsh entry on PATH and require version
-  `0.2.2-rc.3` → create temp DSH_HOME → **preset the first-run popup
+  `0.2.2-rc.5` → create temp DSH_HOME → **preset the first-run popup
   skip** (writes the internal-testing notice version into the isolated
   `settings.yaml`, see below) → create profile (explicit
   `plugin list` init) → inject web-app bundle → normalize plugin args (relative
@@ -134,7 +134,7 @@ skills/dsh-verify-isolated/
   references/manual-setup.md      # branch: manual isolated-environment setup (the script's steps, expanded)
   references/browser-kernel.md    # branch: Chromium kernel detection chain, per-platform self-check and install
   references/viewport-geometry.md # branch: per-viewport device emulation and geometry-assertion methodology
-  scripts/verify-isolated.mjs     # one-shot isolated verification script (Node, requires dsh 0.2.2-rc.3 on PATH / --browser / --port 0 / --keep / --no-build / --evidence-dir / --audit / --audit-extra-dirs / --no-skip-onboarding / --json)
+  scripts/verify-isolated.mjs     # one-shot isolated verification script (Node, requires dsh 0.2.2-rc.5 on PATH / --browser / --port 0 / --keep / --no-build / --evidence-dir / --audit / --audit-extra-dirs / --no-skip-onboarding / --json)
   scripts/lib/verify-core.mjs     # shared base utilities (exit-code constants/poll/findFreePort/port and token-URL parsing/C11 normalization)
   scripts/lib/audit.mjs           # B4 isolated-audit pure functions (scanSnapshot/diffAgainstWhitelist/checkSymlinkEscape/runAudit + versioned whitelist WHITELIST_V)
   scripts/lib/emulation.mjs       # device-emulation pure functions (parseEmulationFlags / buildDeviceMetrics; CDP session semantics)
@@ -151,14 +151,14 @@ Once the skill is loaded, follow its checklist; you can also call the package's 
 script directly. The script's resource base directory relative to the skill (the
 `Base directory for this skill:` absolute path injected when the skill loads) is always
 `scripts/verify-isolated.mjs` (the driver needs Node >=22, while the target DSH
-`0.2.2-rc.3` runtime requires Node >=24.9). It adapts to the
+`0.2.2-rc.5` runtime requires Node >=24.9). It adapts to the
 install shape (npm copy / `link:` dev mode / in-repo browsing); see SKILL.md §2.
 
-This package supports only dsh `0.2.2-rc.3` and is incompatible with every other runtime.
+This package supports only dsh `0.2.2-rc.5` and is incompatible with every other runtime.
 The dsh entry is resolved from PATH; a missing, unreadable, or mismatched runtime fails closed.
 
 ```bash
-# Requirement: `dsh --version` on PATH is `0.2.2-rc.3`
+# Requirement: `dsh --version` on PATH is `0.2.2-rc.5`
 node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 3456 <plugin-package-path>
 # parallel sessions / browser verification: --port 0 auto-detects the port,
 # --browser launches a dedicated browser instance

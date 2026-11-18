@@ -264,36 +264,6 @@ export function fakeWebServer(
   return { service, routes, removals };
 }
 
-/** 假宿主 agent 注册表：只实现组合根读的两处（`get` 与 `isOwnedBy`）。 */
-export function fakeAgents(parent: Agent, child: Agent): Context["agents"] {
-  return {
-    get: (id: string) => (id === parent.id ? parent : undefined),
-    isOwnedBy: (id: string, owner: Agent) => id === child.id && owner === parent,
-  } as unknown as Context["agents"];
-}
-
-/** rc3 的 `agents`：`isOwnedBy` 已删除，只剩活体查询。 */
-export function fakeAgentsRc3(parent: Agent, _child: Agent): Context["agents"] {
-  return {
-    get: (id: string) => (id === parent.id ? parent : undefined),
-  } as unknown as Context["agents"];
-}
-
-/** rc3 的 `ctx.subagents`：parent 是根，child 是它的直接子成员。 */
-export function fakeSubagents(parent: Agent, child: Agent): unknown {
-  return {
-    rootOf: (agent: Agent) => {
-      if (agent === parent || agent === child) return parent;
-      throw new Error("UNAUTHORIZED");
-    },
-    namesOf: (agent: Agent) => {
-      if (agent === parent) return { self: "lead" };
-      if (agent === child) return { self: "kid", parent: "lead" };
-      throw new Error("UNAUTHORIZED");
-    },
-  };
-}
-
 /**
  * 日志出口：`LoggerService` 的公开扩展点，用它把 warn 收进数组。
  *
@@ -330,7 +300,7 @@ export const mounted: { live: Fiber | null } = { live: null };
  * `settings` 是本插件的**显式依赖**（组合根的 `inject`）：宿主保证它在插件装配前就绪，所以这里
  * 总是先 provide 一个假的；`settings` 的值就是那份 0.2.3 存量命名空间的 user 层（缺省 = 有服务
  * 但没存量）。「服务没来」这条分支已不属于本插件——它变成 cordis 的 inject 门（见 inject 门用例）。
- * `services` 是其余宿主服务（如 `agents`）——装与不装是两条不同的判定路径。
+ * `services` 是其余宿主服务——装与不装是两条不同的判定路径。
  */
 export async function mount(options: {
   config?: { enabled?: boolean };

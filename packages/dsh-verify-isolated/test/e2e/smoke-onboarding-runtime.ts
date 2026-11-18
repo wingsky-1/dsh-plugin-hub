@@ -48,7 +48,7 @@ function makeDshInstall(
   tmp: string,
   name: string,
   clientSource: string,
-  versionOutput: string | null = "0.2.2-rc.3",
+  versionOutput: string | null = "0.2.2-rc.5",
   versionExitCode = 0,
 ) {
   const fixture = mkdtempSync(join(tmp, name));
@@ -293,7 +293,7 @@ export function presetWelcomeNoticeContract() {
 
     it("目标 namespace+version 仍预置真实 settings，报告显式真实 namespace", () => {
       expect(state.validCase.status).toBe(0);
-      expect(state.validCase.report).toContain("0.2.2-rc.3");
+      expect(state.validCase.report).toContain("0.2.2-rc.5");
       expect(state.validCase.verdict.onboarding).toMatchObject({
         skip: true,
         source: "preset",

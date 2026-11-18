@@ -67,7 +67,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 > run `dsh plugin --profile web remove @wingsky-1/dsh-gzip` to uninstall after upgrading.
 >
 > `@wingsky-1/dsh-lan-proxy` is retired (#1159) and no longer ships with the bundle. DSH
-> `0.2.2-rc.3` provides a concrete LAN bind, TLS, Host/Origin and token/session identity
+> `0.2.2-rc.5` provides a concrete LAN bind, TLS, Host/Origin and token/session identity
 > admission, but the old proxy rewriting, Brotli, WS bridge/keep-alive and local CA
 > management have no equivalence promise. Short requests and long streams now depend on
 > official `requestRejection` identity admission and an admitted Peer lifecycle respectively;

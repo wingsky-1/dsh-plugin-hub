@@ -465,7 +465,7 @@ export function earlyExitContract() {
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 const args = process.argv.slice(2);
-if (args.includes("--version")) { console.log("0.2.2-rc.3"); process.exit(0); }
+if (args.includes("--version")) { console.log("0.2.2-rc.5"); process.exit(0); }
 if (args[0] === "plugin" && args.includes("list")) {
   const i = args.indexOf("--profile");
   const dir = join(process.env.DSH_HOME, "profiles", args[i + 1]);
