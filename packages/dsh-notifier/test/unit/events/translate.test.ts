@@ -168,16 +168,25 @@ describe("会话内事件：只记账，不产出", () => {
   });
 
   // 未装配状态机不能结算 idle 完成：显式装配守卫避免事件路过后悄悄产出错误分类。
-  it("未装配时 idle 完成结算当场抛错", () => {
+  // 守卫在 `settleIdle` 入口（state/index.ts:118），先于归属判定与标题读取；故 header 的三种
+  // 形态都必须命中**同一条**消息。只测 parentSession 一种时，把守卫挪到 `isSubagentOf` 之后
+  // （子代理走另一条分支）也照样全绿。
+  it.each([
+    ["parentSession 指向已消失的父会话", { parentSession: "p-gone" }],
+    ["origin 为 subagent 且没有 parentSession", { origin: "subagent" }],
+    ["header 是空对象", {}],
+  ] as const)("未装配时 idle 完成结算当场抛错（header：%s）", (_label, header) => {
     const agent = {
       id: "u-uninstalled",
-      session: { header: { parentSession: "p-gone" }, snapshotEvents: () => [] },
+      session: { header, snapshotEvents: () => [] },
     } as unknown as Agent;
 
     agentStates.observeStatus({ agent, status: "running" });
     agentStates.rememberTurnEnd(agent.id, { turn: 1, kind: "completed" });
     // idle 结算必须经过状态机的显式装配守卫，而不是依赖某个宿主服务碰巧抛错。
-    expect(() => agentStates.observeStatus({ agent, status: "idle" })).toThrow(/尚未装配/u);
+    expect(() => agentStates.observeStatus({ agent, status: "idle" })).toThrow(
+      /^dsh-notifier: events 域状态机尚未装配$/u,
+    );
   });
 });
 
