@@ -17,7 +17,7 @@ export const scriptSupportFiles = [
   join(SCRIPTS_DIR, "lib", "onboarding-preset.mjs"),
   join(SCRIPTS_DIR, "lib", "plugin-setup.mjs"),
 ];
-export const TARGET_DSH_VERSION = "0.2.2-rc.3";
+export const TARGET_DSH_VERSION = "0.2.2-rc.5";
 export const REF_DIR = join(SKILL_DIR, "references");
 export const REF_FILES = [
   "script-contracts.md",

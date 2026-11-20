@@ -10,7 +10,6 @@ import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import { describe, expect, it } from "vitest";
 
-import { makeAgentRegistry } from "../../helpers.ts";
 import {
   isSubagentOf,
   lastTurnEndOf,
@@ -202,108 +201,45 @@ describe("新增会话事件不改变证据读取语义", () => {
 });
 
 describe("isSubagentOf：子代理归属判定", () => {
-  it("origin 命中即真，不必再问注册表", () => {
+  // rc.5 起判定改读 header 的持久化谱系：origin 是粗分类，delegationDepth 是递归预算
+  // （顶层缺省 / 子代理为父深度 + 1）。运行时归属探针（agents.isOwnedBy、ctx.subagents 树关系）
+  // 不再参与：前者 rc.3 起已从服务面消失，后者要求父 agent 保持活跃。
+  it("origin 命中即真，不必再看深度", () => {
     const agent = makeAgent("sub-origin", { header: { origin: "subagent" } });
-    expect(isSubagentOf(agent, makeAgentRegistry())).toBe(true);
+    expect(isSubagentOf(agent)).toBe(true);
   });
 
-  it("没有 parentSession 就是主任务", () => {
+  it("delegationDepth > 0 即子代理：谱系持久化，父 agent 消亡后依然成立", () => {
+    const agent = makeAgent("sub-depth", { header: { delegationDepth: 1 } });
+    expect(isSubagentOf(agent)).toBe(true);
+  });
+
+  it("delegationDepth 为 0 是顶层会话的显式写法，判主任务", () => {
+    const agent = makeAgent("sub-depth-zero", { header: { delegationDepth: 0 } });
+    expect(isSubagentOf(agent)).toBe(false);
+  });
+
+  it("delegationDepth 不是有限数时判主任务：脏 header 不能把用户自己的任务静默成子代理", () => {
+    const nan = makeAgent("sub-depth-nan", { header: { delegationDepth: Number.NaN } });
+    const negative = makeAgent("sub-depth-negative", { header: { delegationDepth: -1 } });
+    const text = makeAgent("sub-depth-text", { header: { delegationDepth: "1" } });
+    expect(isSubagentOf(nan)).toBe(false);
+    expect(isSubagentOf(negative)).toBe(false);
+    expect(isSubagentOf(text)).toBe(false);
+  });
+
+  it("只有 parentSession 的 header 判主任务：rc.5 的普通 fork 不写它，历史残留不构成谱系证据", () => {
+    const agent = makeAgent("fork-historical", { header: { parentSession: "p-live" } });
+    expect(isSubagentOf(agent)).toBe(false);
+  });
+
+  it("空 header 判主任务", () => {
     const agent = makeAgent("main-root", { header: {} });
-    expect(isSubagentOf(agent, makeAgentRegistry())).toBe(false);
+    expect(isSubagentOf(agent)).toBe(false);
   });
 
-  it("父 agent 已消亡（查不到）时判主任务：宁可多报一条 done，也不静默用户自己的任务", () => {
-    const agent = makeAgent("fork-orphan", { header: { parentSession: "p-gone" } });
-    expect(isSubagentOf(agent, makeAgentRegistry())).toBe(false);
-  });
-
-  it("父 agent 在册但不拥有它（用户 fork 主线）时判主任务：header 单信号分不开两种 fork", () => {
-    const child = makeAgent("fork-user", { header: { parentSession: "p-live" } });
-    const parent = makeAgent("p-live");
-    const registry = makeAgentRegistry({ live: [parent], owned: [] });
-    expect(isSubagentOf(child, registry)).toBe(false);
-  });
-
-  it("父 agent 在册且确由它创建时判子代理（运行时归属是唯一可靠的第二个信号）", () => {
-    const child = makeAgent("sub-owned", { header: { parentSession: "p-owner" } });
-    const parent = makeAgent("p-owner");
-    const registry = makeAgentRegistry({ live: [parent], owned: [["sub-owned", "p-owner"]] });
-    expect(isSubagentOf(child, registry)).toBe(true);
-  });
-
-  it("rc3：isOwnedBy 缺位时用 subagents 的树关系判直接父，不抛 TypeError", () => {
-    const child = makeAgent("sub-rc3", { header: { parentSession: "p-rc3" } });
-    const parent = makeAgent("p-rc3");
-    const registry = makeAgentRegistry({
-      live: [parent],
-      legacyOwnership: false,
-      subagents: {
-        rootOf: () => parent,
-        namesOf: (agent) => (agent === child ? { self: "kid", parent: "lead" } : { self: "lead" }),
-      },
-    });
-    expect(isSubagentOf(child, registry)).toBe(true);
-  });
-
-  it("rc3：跨树同名（两个 lead）不算直接父", () => {
-    const child = makeAgent("sub-other-tree", { header: { parentSession: "p-other-tree" } });
-    const parent = makeAgent("p-other-tree");
-    const elsewhere = makeAgent("tree-b");
-    const registry = makeAgentRegistry({
-      live: [parent],
-      legacyOwnership: false,
-      subagents: {
-        rootOf: (agent) => (agent === child ? elsewhere : parent),
-        namesOf: (agent) => (agent === child ? { self: "kid", parent: "lead" } : { self: "lead" }),
-      },
-    });
-    expect(isSubagentOf(child, registry)).toBe(false);
-  });
-
-  it("rc3：名字父项指向别的成员时不是直接父", () => {
-    const child = makeAgent("sub-grandchild", { header: { parentSession: "p-grand" } });
-    const owner = makeAgent("p-grand");
-    const registry = makeAgentRegistry({
-      live: [owner],
-      legacyOwnership: false,
-      subagents: {
-        rootOf: () => owner,
-        namesOf: (agent) =>
-          agent === child ? { self: "kid", parent: "middle" } : { self: "lead" },
-      },
-    });
-    expect(isSubagentOf(child, registry)).toBe(false);
-  });
-
-  it("rc3：rootOf / namesOf 抛错时按主任务处理，不把异常抛进事件链", () => {
-    const child = makeAgent("sub-throws", { header: { parentSession: "p-throws" } });
-    const parent = makeAgent("p-throws");
-    const registry = makeAgentRegistry({
-      live: [parent],
-      legacyOwnership: false,
-      subagents: {
-        rootOf: () => {
-          throw new Error("UNAUTHORIZED");
-        },
-        namesOf: () => {
-          throw new Error("UNAUTHORIZED");
-        },
-      },
-    });
-    expect(isSubagentOf(child, registry)).toBe(false);
-  });
-
-  it("rc1 / rc2：isOwnedBy 在场时优先，rc3 回退不参与", () => {
-    const child = makeAgent("sub-legacy", { header: { parentSession: "p-legacy" } });
-    const parent = makeAgent("p-legacy");
-    const registry = makeAgentRegistry({
-      live: [parent],
-      owned: [],
-      subagents: {
-        rootOf: () => parent,
-        namesOf: (agent) => (agent === child ? { self: "kid", parent: "lead" } : { self: "lead" }),
-      },
-    });
-    expect(isSubagentOf(child, registry)).toBe(false);
+  it("origin 是别的值（脏 header）且无深度时仍判主任务", () => {
+    const agent = makeAgent("dirty-origin", { header: { origin: "main" } });
+    expect(isSubagentOf(agent)).toBe(false);
   });
 });

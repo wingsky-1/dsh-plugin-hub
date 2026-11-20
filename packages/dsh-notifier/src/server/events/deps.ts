@@ -1,8 +1,6 @@
 /** events 域依赖声明：本域只声明「我需要外部什么」，装配由组合根递进来；声明面**只有类型**。 */
 import type { Events } from "@deepseek-ai/cordis";
-import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
-import type { SessionId } from "@deepseek-ai/dsh-session/types";
 import type { ApprovalRequest } from "@deepseek-ai/dsh-user-approval";
 import type { AskUserQuestionRequest } from "@deepseek-ai/dsh-user-questions";
 import type * as pipelineApi from "../pipeline/interface.ts";
@@ -25,29 +23,6 @@ export type AgentTurnStoppingPayload = Parameters<Events["agent/turn-stopping"]>
 export type AgentErrorPayload = Omit<Parameters<Events["agent/error"]>[0], "error"> & {
   error: string;
 };
-
-/** 活体 agent 的查询结果。写成判别联合而不是 `Agent | undefined`：「查不到」在这里是一个**有名字的事实**——它正是
- * 子代理判定里「父 agent 已消亡」那一支；用可选返回值表达，调用点就得靠判空去猜是哪一种情况。 */
-export type AgentLookup = { found: true; agent: Agent } | { found: false };
-
-/** rc3 的 `ctx.subagents` 子树查询面：只取判断直接父所需的两处，避免为一个可选回退引入新的类型包依赖。 */
-export interface SubagentTreePort {
-  /** 活体 agent 所属子代理树的根；没有活跃运行时归属时抛错。 */
-  rootOf(caller: Agent): Agent;
-  /** 树成员与直接创建者的模型侧名字；根为 `lead`，没有活跃运行时归属时抛错。 */
-  namesOf(agent: Agent): { readonly self: string; readonly parent?: string };
-}
-
-/** 运行时归属查询面：某个会话是不是由某个活体 agent 的作用域创建的。fork 型委派与用户 fork 主线在持久化 header 上
- * 完全同形（都只有 parentSession、都没有 origin），header 单信号分不开——唯一可靠依据是运行时归属。 */
-export interface AgentRegistryPort {
-  /** 查活体 agent；不在册即已消亡或从未存在。 */
-  lookup(id: SessionId): AgentLookup;
-  /** `id` 是否由 `owner` 的作用域创建；rc3 删除该接口后缺位，由 `subagents` 回退判定。 */
-  isOwnedBy?(id: SessionId, owner: Agent): boolean;
-  /** rc3 的子树查询面；rc1 / rc2 没有这个服务，缺位时只能按主任务处理。 */
-  subagents?: SubagentTreePort;
-}
 
 /** 宿主事件面：订阅 + 退订，仅此而已——域拿到的是**事件源**，不是宿主。参数用官方类型层的原始负载，不做二次包装
  * （包装会产生一个与本域判断无关的中间形状，而解释事件本来就是本域的工作）；agent 事件尤其不能只给 id：任务名、
@@ -73,8 +48,6 @@ export interface HostEventPort {
 export interface EventsDeps {
   /** 宿主事件面：只有组合根够得着 `ctx`。 */
   readonly events: HostEventPort;
-  /** 宿主 agent 注册表：子代理归属判定的第二个信号。 */
-  readonly agents: AgentRegistryPort;
   /** 诊断出口：完成判定跳过（abort / max-tokens 每轮都走）时要说得出为什么。 */
   readonly logger: LoggerPort;
   readonly pipeline: PipelinePort;

@@ -47,4 +47,6 @@ export const STEPS: readonly UpgradeStep<UpgradeDeps>[] = [
   { fromVersion: "0.2.10", targetVersion: "0.2.11", run: tickUpgradeVersionSync },
   // 0.2.11 → 0.2.12 为空步（rc.3 适配不改变 notifier 存储形态）：run 指共享空函数，只推进刻度。
   { fromVersion: "0.2.11", targetVersion: "0.2.12", run: tickUpgradeVersionSync },
+  // 0.2.12 → 0.2.13 为空步（rc.5 适配不改变 notifier 存储形态）：run 指共享空函数，只推进刻度。
+  { fromVersion: "0.2.12", targetVersion: "0.2.13", run: tickUpgradeVersionSync },
 ];

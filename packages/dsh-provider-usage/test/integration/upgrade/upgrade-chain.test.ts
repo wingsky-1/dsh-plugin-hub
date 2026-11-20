@@ -403,19 +403,35 @@ describe("装配顺序：迁移在读存储的域之前跑完", () => {
     expect(readFileSync(targetConfigFile(root), "utf8")).toBe(storedData);
   });
 
-  it("0.2.11 → 0.2.12 只推进刻度并可重复启动（判据：存储正文逐字不变，漏步或误写必须红）", async () => {
+  it("0.2.11 历史刻度跨链推进到最新并可重复启动（判据：存储正文逐字不变）", async () => {
     const storedData = '{"user":"keep exact rc3","count":12}\n';
     mkdirSync(join(root, "reports"), { recursive: true });
     writeFileSync(upgradeVersionFile(root), "0.2.11\n", "utf8");
     writeFileSync(targetConfigFile(root), storedData, "utf8");
 
     await installUpgrade(deps());
-    expect(await readStoredVersion(root)).toBe("0.2.12");
+    expect(await readStoredVersion(root)).toBe(newestTarget());
     expect(readFileSync(targetConfigFile(root), "utf8")).toBe(storedData);
 
     releaseUpgrade();
     await installUpgrade(deps());
-    expect(await readStoredVersion(root)).toBe("0.2.12");
+    expect(await readStoredVersion(root)).toBe(newestTarget());
+    expect(readFileSync(targetConfigFile(root), "utf8")).toBe(storedData);
+  });
+
+  it("0.2.12 → 0.2.13 只推进刻度并可重复启动（判据：存储正文逐字不变，漏步或误写必须红）", async () => {
+    const storedData = '{"user":"keep exact rc5","count":13}\n';
+    mkdirSync(join(root, "reports"), { recursive: true });
+    writeFileSync(upgradeVersionFile(root), "0.2.12\n", "utf8");
+    writeFileSync(targetConfigFile(root), storedData, "utf8");
+
+    await installUpgrade(deps());
+    expect(await readStoredVersion(root)).toBe("0.2.13");
+    expect(readFileSync(targetConfigFile(root), "utf8")).toBe(storedData);
+
+    releaseUpgrade();
+    await installUpgrade(deps());
+    expect(await readStoredVersion(root)).toBe("0.2.13");
     expect(readFileSync(targetConfigFile(root), "utf8")).toBe(storedData);
   });
 });

@@ -119,19 +119,35 @@ describe("STEPS 表接线：装配方驱动的确实是本包迁移动作", () =
     expect(readFileSync(configFile(), "utf8")).toBe(storedData);
   });
 
-  it("0.2.11 → 0.2.12 只推进 home 刻度并可重复启动（判据：存储正文逐字不变，漏步或误写必须红）", async () => {
+  it("0.2.11 历史刻度跨链推进到最新 home 刻度并可重复启动（判据：存储正文逐字不变）", async () => {
     const storedData = '{"servers":["keep exact rc3"]}\n';
     mkdirSync(dirname(versionFile()), { recursive: true });
     writeFileSync(versionFile(), "0.2.11\n", "utf8");
     writeFileSync(configFile(), storedData, "utf8");
 
     await assemble();
-    expect(readFileSync(versionFile(), "utf8").trim()).toBe("0.2.12");
+    expect(readFileSync(versionFile(), "utf8").trim()).toBe(newestTargetVersion(STEPS));
     expect(readFileSync(configFile(), "utf8")).toBe(storedData);
 
     releaseUpgrade();
     await assemble();
-    expect(readFileSync(versionFile(), "utf8").trim()).toBe("0.2.12");
+    expect(readFileSync(versionFile(), "utf8").trim()).toBe(newestTargetVersion(STEPS));
+    expect(readFileSync(configFile(), "utf8")).toBe(storedData);
+  });
+
+  it("0.2.12 → 0.2.13 只推进 home 刻度并可重复启动（判据：存储正文逐字不变，漏步或误写必须红）", async () => {
+    const storedData = '{"servers":["keep exact rc5"]}\n';
+    mkdirSync(dirname(versionFile()), { recursive: true });
+    writeFileSync(versionFile(), "0.2.12\n", "utf8");
+    writeFileSync(configFile(), storedData, "utf8");
+
+    await assemble();
+    expect(readFileSync(versionFile(), "utf8").trim()).toBe("0.2.13");
+    expect(readFileSync(configFile(), "utf8")).toBe(storedData);
+
+    releaseUpgrade();
+    await assemble();
+    expect(readFileSync(versionFile(), "utf8").trim()).toBe("0.2.13");
     expect(readFileSync(configFile(), "utf8")).toBe(storedData);
   });
 });

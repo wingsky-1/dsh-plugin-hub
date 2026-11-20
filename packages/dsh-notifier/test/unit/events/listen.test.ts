@@ -18,7 +18,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   AgentDisposedPayload,
   AgentErrorPayload,
-  AgentRegistryPort,
   AgentStatusPayload,
   AgentTurnStoppingPayload,
   EventsDeps,
@@ -26,7 +25,7 @@ import type {
   NotifyRequest,
 } from "../../../src/server/events/deps.ts";
 import { installEvents, releaseEvents } from "../../../src/server/events/interface.ts";
-import { makeAgentRegistry, makeLogger } from "../../helpers.ts";
+import { makeLogger } from "../../helpers.ts";
 
 afterEach(() => {
   releaseEvents();
@@ -155,13 +154,12 @@ function makeSession(
 }
 
 /** 装配一次 events 域，交出观测面。 */
-function assemble(options: { agents?: AgentRegistryPort } = {}) {
+function assemble() {
   const events = makeHostEvents();
   const logger = makeLogger();
   const submitted: NotifyRequest[] = [];
   const deps: EventsDeps = {
     events: events.port,
-    agents: options.agents ?? makeAgentRegistry(),
     logger,
     pipeline: {
       submit: (request) => {
@@ -361,19 +359,16 @@ describe("子代理归属：main 与 subagent 的 kind 分流", () => {
     expect(submitted[0]!.body).toContain("子任务「子任务」已完成");
   });
 
-  it("父 agent 在册且确由它创建时报 subagent-done（运行时归属是 header 之外的第二个信号）", () => {
-    const parent = makeSession("p-owner");
-    const child = makeSession("s-owned", { header: { parentSession: "p-owner" } });
-    const { events, submitted } = assemble({
-      agents: makeAgentRegistry({ live: [parent.agent], owned: [["s-owned", "p-owner"]] }),
-    });
+  it("delegationDepth > 0 的会话报 subagent-done（rc.5 的持久化谱系信号，父消亡后仍成立）", () => {
+    const { events, submitted } = assemble();
+    const child = makeSession("s-depth", { header: { delegationDepth: 1 } });
     setStatus(events, child, "running");
     child.endTurn(1);
     setStatus(events, child, "idle");
     expect(submitted[0]!.kind).toBe("subagent-done");
   });
 
-  it("父 agent 已消亡（查不到）时判主任务：宁可多报一条 done，也不静默用户自己的任务", () => {
+  it("只有 parentSession 的 header 判主任务：父在册不是谱系证据，宁多报一条 done 不静默用户 fork", () => {
     const { events, submitted } = assemble();
     const child = makeSession("s-orphan", { header: { parentSession: "p-gone" } });
     setStatus(events, child, "running");

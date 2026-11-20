@@ -164,7 +164,7 @@ export function skillDisclosureContract() {
 
     it("SKILL.md 含 PATH dsh 版本锚定用法", () => {
       expect(skillRaw.includes("PATH")).toBeTruthy();
-      expect(skillRaw.includes("0.2.2-rc.3")).toBeTruthy();
+      expect(skillRaw.includes("0.2.2-rc.5")).toBeTruthy();
       expect(skillRaw.includes("--dsh")).toBeFalsy();
     });
 

@@ -27,7 +27,7 @@ class EventListener {
   install(deps: EventsDeps): void {
     if (this.installed) throw new Error("dsh-notifier: events 域只能装配一次");
     this.installed = true;
-    agentStates.install({ logger: deps.logger, agents: deps.agents });
+    agentStates.install({ logger: deps.logger });
     const { events: port, pipeline } = deps;
     const readLocale = deps.readLocale ?? (() => "zh" as NotificationLocale);
     this.releases.push(

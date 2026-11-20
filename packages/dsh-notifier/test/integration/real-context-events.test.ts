@@ -13,11 +13,8 @@ import {
   captureWarnings,
   countKind,
   fakeAgent,
-  fakeAgents,
-  fakeAgentsRc3,
   fakeSession,
   fakeSettings,
-  fakeSubagents,
   fakeWebServer,
   historyLines,
   kindLine,
@@ -339,52 +336,32 @@ describe("宿主事件可达性", () => {
   registerHostEventDelivery();
 });
 
-describe("宿主 agent 注册表（子代理归属）", () => {
-  it("注册表缺位：带 parentSession 的会话按主任务处理（宁可多报一条 done，不静默用户自己的任务）", async () => {
+describe("子代理归属（rc.5 header 谱系）", () => {
+  it("宿主不装 agents / subagents 服务也不影响判定：组合根不再触碰注册表", async () => {
     const { root, unmount } = await mount({});
-    // header 有 parentSession，但宿主没装 agents 服务：`ctx.get("agents", false)` 必须缺位安全，
-    // 而不是抛错或把「查不到」当成「是子代理」——后者会让子代理的完成通知永远发不出去。
+    // 判定只读 header 谱系，不依赖 agents / subagents 服务；两者缺位必须安全，
+    // 而不是抛错或把「查不到」当成「是子代理」。
     const events: SessionEvent[] = [];
     const child = fakeAgent("itest-orphan", events, { parentSession: "itest-gone" });
 
     root.emit("agent/status", { agent: child, status: "running" });
     events.push(turnEndEvent(1, "completed"));
     root.emit("agent/status", { agent: child, status: "idle" });
-    await pollUntil(() => countKind("done") === 1, "查不到父 agent 时按主任务报完成");
+    await pollUntil(() => countKind("done") === 1, "无谱系信号时按主任务报完成");
     expect(countKind("subagent-done")).toBe(0);
     await unmount();
   });
 
-  it("注册表有据：确由父 agent 创建的会话落 subagent-done，而不是当成主任务再报一次", async () => {
-    const parent = fakeAgent("itest-parent");
+  it("header 带 delegationDepth 的会话落 subagent-done，而不是当成主任务再报一次", async () => {
+    const { root, unmount } = await mount({});
     const events: SessionEvent[] = [];
-    const child = fakeAgent("itest-child", events, { parentSession: "itest-parent" });
-    const { root, unmount } = await mount({ services: { agents: fakeAgents(parent, child) } });
+    const child = fakeAgent("itest-child", events, { delegationDepth: 1 });
 
     root.emit("agent/status", { agent: child, status: "running" });
     events.push(turnEndEvent(1, "completed"));
     root.emit("agent/status", { agent: child, status: "idle" });
-    // 两跳判定的产物只有 kind 能区分：`done` 会让每个子代理都伪装成用户的主任务。
+    // 判定的产物只有 kind 能区分：`done` 会让每个子代理都伪装成用户的主任务。
     await pollUntil(() => countKind("subagent-done") === 1, "子代理完成通知落史");
-    expect(countKind("done")).toBe(0);
-    await unmount();
-  });
-
-  it("rc3：agents.isOwnedBy 已删除时经 subagents 树关系判定直接父，不抛 TypeError 且不丢完成通知", async () => {
-    const parent = fakeAgent("itest-rc3-parent");
-    const events: SessionEvent[] = [];
-    const child = fakeAgent("itest-rc3-child", events, { parentSession: "itest-rc3-parent" });
-    const { root, unmount } = await mount({
-      services: {
-        agents: fakeAgentsRc3(parent, child),
-        subagents: fakeSubagents(parent, child),
-      },
-    });
-
-    root.emit("agent/status", { agent: child, status: "running" });
-    events.push(turnEndEvent(1, "completed"));
-    root.emit("agent/status", { agent: child, status: "idle" });
-    await pollUntil(() => countKind("subagent-done") === 1, "rc3 子代理完成通知落史");
     expect(countKind("done")).toBe(0);
     await unmount();
   });

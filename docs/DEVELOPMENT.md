@@ -28,7 +28,7 @@ pnpm pack:check   # tarball 完整性（含聚合包）
 pnpm typecheck    # 全仓类型检查
 ```
 
-> Node 版本：目标 DSH `0.2.2-rc.3` 的运行前提是 **>=24.9**；本仓本地直跑 TS 的
+> Node 版本：目标 DSH `0.2.2-rc.5` 的运行前提是 **>=24.9**；本仓本地直跑 TS 的
 > type stripping 工具门槛是 **>=23.6**；CI 固定 Node 24。
 > 阈值事实源分处两处，按维度划分：**覆盖率**在 `scripts/data/coverage.config.json`
 > 的 `thresholds`（#733 计划项 3.4 起；`vitest.config.ts` 只 import 它，不得再内联
