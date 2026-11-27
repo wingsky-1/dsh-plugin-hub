@@ -266,11 +266,13 @@ export function parseBody<T>(text: string): T {
 
 /**
  * 线协议里的一帧（`data:` 行）。`sound` 是播放决议对象而不是布尔（客户端据 `mode` 决定谁来发声）；
- * `whenVisible` 是浏览器出口的展示条件，由服务端随帧下发——客户端不查配置就能决定「可见时弹不弹」。
+ * `whenVisible` 是浏览器出口的展示条件，由服务端随帧下发——客户端不查配置就能决定「可见时弹不弹」；
+ * `covered` 只属于 hello（`?since` 水位是否被回放窗口完整覆盖）。
  */
 interface SseFrame {
   readonly type: string;
   readonly seq?: number;
+  readonly covered?: boolean;
   readonly kind?: string;
   readonly title?: string;
   readonly message?: string;
@@ -280,7 +282,8 @@ interface SseFrame {
 
 interface SseConnection {
   readonly raw: () => string;
-  readonly frames: () => SseFrame[];
+  /** 按线协议 type 取帧；默认 notify（hello / ping 不是通知帧，断言不该把它们数进去）。 */
+  readonly frames: (type?: string) => SseFrame[];
   close(): void;
 }
 
@@ -304,7 +307,11 @@ export function openSse(port: number, path: string): Promise<SseConnection> {
         res.on("data", (chunk: string) => {
           raw += chunk;
         });
-        resolve({ raw: () => raw, frames: () => framesOf(raw), close: () => req.destroy() });
+        resolve({
+          raw: () => raw,
+          frames: (type = "notify") => framesOf(raw, type),
+          close: () => req.destroy(),
+        });
       },
     );
     req.on("error", reject);
@@ -312,14 +319,15 @@ export function openSse(port: number, path: string): Promise<SseConnection> {
   });
 }
 
-/** 已到达的帧：坏行当没到（解析失败不该让整条连接看起来断了）。 */
-function framesOf(raw: string): SseFrame[] {
+/** 已到达的帧：坏行当没到（解析失败不该让整条连接看起来断了）；默认只取 notify。 */
+function framesOf(raw: string, type = "notify"): SseFrame[] {
   return raw
     .split("\n")
     .filter((line) => line.startsWith("data: "))
     .flatMap((line) => {
       try {
-        return [parseBody<SseFrame>(line.slice("data: ".length))];
+        const frame = parseBody<SseFrame>(line.slice("data: ".length));
+        return frame.type === type ? [frame] : [];
       } catch {
         return [];
       }
@@ -346,6 +354,8 @@ export interface HealthBody {
   plugin: string;
   platform: string;
   sseEvicts: Record<string, number>;
+  /** 回放窗口端点（TTL 过滤后）：只供排障，不上线协议。 */
+  sseReplay: { from: number | null; to: number | null };
   capabilities: {
     host: {
       verdict: string;

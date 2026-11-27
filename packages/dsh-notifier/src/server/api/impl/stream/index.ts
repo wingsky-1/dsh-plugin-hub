@@ -1,5 +1,11 @@
-/** api 域流块：SSE 连接、序号与断线补拉（共享层枢纽只管连接表、心跳与主动回收）。**序号**持久化在 `seq.json` 且重启后
- * 接着数——重置会让重连客户端把旧帧当新的，表现为「偶尔少一条通知」；**补拉**走 `?since=N`（EventSource 自动重连不带 query）。 */
+/**
+ * api 域流块：SSE 连接、序号与断线补拉（共享层枢纽只管连接表、心跳与主动回收）。**序号**持久化在 `seq.json` 且重启后
+ * 接着数——重置会让重连客户端把旧帧当新的，表现为「偶尔少一条通知」；**补拉**走显式 `?since=N`（EventSource 自动重连
+ * 不带 query）。缺省 / 非法 / 非正数的 `since` 一律视为**无水位=新会话**，不回放任何旧帧（`since=0` 与缺省同义）。
+ *
+ * 回放窗口有界：最近 `REPLAY_LIMIT` 条且 5 分钟内的帧。每次连接先发 `hello {seq, covered}`——客户端据此区分
+ * fresh（播种水位）/ resume（不抬水位，等补拉帧）/ gap（显式提示可能错过）；`replayFrom/replayTo` 只进 `/health`。
+ */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   createSseHub,
@@ -17,6 +23,9 @@ import type { StreamBuildPort, StreamDeps, StreamEvent } from "./type.ts";
 
 /** 补拉缓冲上限（条）：断线重连能回放的窗口，超出后只能从最新开始接。 */
 const REPLAY_LIMIT = 200;
+
+/** 补拉窗口时长（毫秒）：与条数上限并列的第二道有界条件，过期帧不再回放。 */
+const REPLAY_TTL_MS = 5 * 60_000;
 
 /** 心跳间隔（毫秒）：与客户端 60s 看门狗对齐，留足两次失败的余地。 */
 const HEARTBEAT_MS = 30000;
@@ -57,6 +66,7 @@ const REAL_BUILD: StreamBuildPort = {
   open(file) {
     return { seq: readSeq(file), hub: createSseHub({ heartbeatMs: HEARTBEAT_MS }) };
   },
+  now: () => Date.now(),
 };
 
 /** 流枢纽：连接表在共享层，序号与补拉在本块。 */
@@ -69,8 +79,8 @@ class StreamHub {
   private hub: SseHub = UNINSTALLED_HUB;
   /** 单调序号：上次进程留下的值往后接着数。 */
   private seq = 0;
-  /** 补拉缓冲：只留最近 `REPLAY_LIMIT` 条。 */
-  private replay: StreamEvent[] = [];
+  /** 补拉缓冲：只留最近 `REPLAY_LIMIT` 条（读取时再按 TTL 过滤）。 */
+  private replay: NotifyEvent[] = [];
   /** 序号落盘位置：DSH home 由环境决定、进程内不变，故随实例一次性定下。 */
   private readonly file = notifierFile(SEQ_FILE_NAME);
   /** 建面端口：进程事实的边界，默认就是真实建面（换端口走 `installStreamBuild`）。 */
@@ -117,7 +127,7 @@ class StreamHub {
     return this.hub.evictStats();
   }
 
-  /** GET /events：接上一条 SSE 连接，并回放 `?since` 之后的帧。 */
+  /** GET /events：接上一条 SSE 连接；先发 hello 前导，只在显式带正水位 `?since=N` 时回放其后的帧。 */
   handle(
     req: IncomingMessage,
     res: ServerResponse,
@@ -167,7 +177,10 @@ class StreamHub {
       "x-accel-buffering": "no",
     });
     res.write(CONNECTED);
-    for (const event of this.since(sinceOf(req))) res.write(encode(event));
+    const since = sinceOf(req);
+    // 顺序是契约：CONNECTED（flush 响应头）→ hello（水位前导）→ 回放 → register（进入广播面）。
+    res.write(encode(this.hello(since)));
+    for (const event of this.since(since)) res.write(encode(event));
     this.hub.register(res);
     return undefined;
   }
@@ -181,13 +194,14 @@ class StreamHub {
     if (!this.installed) return;
     this.seq += 1;
     const { frame } = payload;
+    const now = this.build.now();
     const event: NotifyEvent = {
       type: "notify",
       seq: this.seq,
       kind: payload.kind,
       title: frame.title,
       message: frame.body,
-      ts: Date.now(),
+      ts: now,
       sound: frame.sound,
       // 可见性判定归浏览器出口，帧自描述：客户端拿到就能执行，不必回查自己那份可能已过期的配置快照。
       whenVisible: frame.whenVisible,
@@ -202,9 +216,44 @@ class StreamHub {
     this.hub.broadcast(encode(event));
   }
 
-  /** 序号大于 `since` 的帧，按序。 */
-  private since(value: number): StreamEvent[] {
-    return this.replay.filter((event) => event.type === "notify" && event.seq > value);
+  /** 序号大于 `since` 且在 TTL 窗口内的帧，按序；无水位（`undefined`，即新会话）时一帧都不回放。 */
+  private since(value: number | undefined): NotifyEvent[] {
+    if (value === undefined) return [];
+    return this.window().filter((event) => event.seq > value);
+  }
+
+  /** 当前连接该收到的 hello：高水位 + 请求水位是否被回放窗口完整覆盖。 */
+  private hello(since: number | undefined): Extract<StreamEvent, { type: "hello" }> {
+    const seq = this.seq;
+    if (since === undefined || since === seq) {
+      // 无水位 = 没有要补的东西；刚好追平 = 也不缺。
+      return { type: "hello", seq, covered: true };
+    }
+    if (since > seq) {
+      // 序号回退（如 seq.json 丢失后重启）：客户端水位比服务端还新，窗口不可能覆盖。
+      return { type: "hello", seq, covered: false };
+    }
+    const window = this.window();
+    const from = window[0]?.seq;
+    const to = window[window.length - 1]?.seq;
+    // 覆盖条件：窗口里有 since+1 起的所有帧（from <= since+1），且最后一帧就是当前高水位（to === seq）。
+    const covered = from !== undefined && to === seq && since + 1 >= from;
+    return { type: "hello", seq, covered };
+  }
+
+  /** TTL 过滤后的窗口端点：只供 `/health` 诊断（replayFrom / replayTo），不上线协议。空窗口为 null。 */
+  replayBounds(): { readonly from: number | null; readonly to: number | null } {
+    const window = this.window();
+    return {
+      from: window[0]?.seq ?? null,
+      to: window[window.length - 1]?.seq ?? null,
+    };
+  }
+
+  /** 最近 `REPLAY_LIMIT` 条里仍在 5 分钟内的帧，按序。 */
+  private window(): NotifyEvent[] {
+    const cutoff = this.build.now() - REPLAY_TTL_MS;
+    return this.replay.filter((event) => event.ts >= cutoff);
   }
 }
 
@@ -213,14 +262,14 @@ function encode(event: StreamEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`;
 }
 
-/** 从请求 URL 取 `?since=`；缺失或非法一律当 0（= 回放整个缓冲）。 */
-function sinceOf(req: IncomingMessage): number {
+/** 从请求 URL 取 `?since=`；缺失、非法、负数与 0 一律视为**无水位**（新会话，不回放；`since=0` 不再表示「全量」）。 */
+function sinceOf(req: IncomingMessage): number | undefined {
   const query = (req.url ?? "").split("?")[1];
-  if (query === undefined) return 0;
+  if (query === undefined) return undefined;
   const raw = new URLSearchParams(query).get("since");
-  if (raw === null) return 0;
+  if (raw === null) return undefined;
   const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 /** 读回上次进程留下的序号；文件缺失或内容不是正数都从 0 起算。 */

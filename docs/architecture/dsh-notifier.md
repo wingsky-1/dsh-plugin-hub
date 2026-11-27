@@ -114,9 +114,9 @@ apply 不要求打开设置卡片就启动通知半区；回前台恢复标题�
 | /status | GET | 频道最后终态与连续失败 |
 | /kinds | GET/POST | 动态 kind 清单 / 用户确认 |
 | /test | POST | 固定测试通知、可选 channelId；只报告受理 |
-| /health | GET | 平台、sseEvicts、能力摘要 |
+| /health | GET | 平台、sseEvicts、sseReplay、能力摘要 |
 | /diagnostics | GET | 完整宿主能力与修复建议 |
-| /events | GET | SSE，`?since=N` 补拉（`:40-43` 包一层保 this，裸传丢 this） |
+| /events | GET | SSE，先 hello `{seq, covered}` 再回放；显式 `?since=N`（N>0）补拉，缺省 / 0 = 无水位不回放（`:40-43` 包一层保 this，裸传丢 this） |
 
 health/diagnostics 共用 Promise 缓存探测，8s 总预算；失败/超预算回“无法判定”，不让附属诊断拖垮 health 主面（`src/server/api/impl/probe/index.ts#ProbeEndpoints`）。
 
@@ -148,9 +148,9 @@ revision 是递归稳定 JSON 的 SHA-256 摘要前 32 位，**不是单调计�
 
 ### 3.3 SSE 不是可靠消息队列
 
-`src/server/api/impl/stream/index.ts#StreamHub` 将 body/pop 转 message/playOnly，附 kind/seq/ts/sound/whenVisible；先增序号、入内存最近 `REPLAY_LIMIT = 200` 帧缓冲（`:19`）、异步落序号、广播。开流立即写 `: connected` 注释（`:24-26`）——注释帧客户端不解析，作用是**立即 flush 响应头**：Node 会缓冲响应头直到第一次写入，没有这行客户端要等第一个心跳（30s 后）才从 CONNECTING 进 OPEN。`HEARTBEAT_MS = 30000`（`:22`）与客户端 60s 看门狗对齐（「留足两次失败的余地」，`:21`）；只按 `?since=N` 回 seq>N（EventSource 自动重连不带 query），不声明 SSE id/Last-Event-ID 协议。
+`src/server/api/impl/stream/index.ts#StreamHub` 将 body/pop 转 message/playOnly，附 kind/seq/ts/sound/whenVisible；先增序号、入内存最近 `REPLAY_LIMIT = 200` 条且 `REPLAY_TTL_MS = 5 * 60_000` 内的缓冲（`:25` / `:28`）、异步落序号、广播。开流立即写 `: connected` 注释（`:35`）——注释帧客户端不解析，作用是**立即 flush 响应头**：Node 会缓冲响应头直到第一次写入，没有这行客户端要等第一个心跳（30s 后）才从 CONNECTING 进 OPEN。`HEARTBEAT_MS = 30000`（`:31`）与客户端 60s 看门狗对齐（「留足两次失败的余地」，`:30`）。连接顺序是契约：CONNECTED → `hello {seq, covered}`（`:180-182`）→ 回放 → 注册；hello 的 covered 由 `since`、TTL 过滤后的窗口端点与当前高水位算出（`:226-243`），`replayFrom/replayTo` 只进 `/health` 的 `sseReplay`（`:245-251`）不上线协议。回放只按显式 `?since=N`（N>0）取 seq>N，缺省 / 非法 / 负数 / 0 一律按**无水位=新会话**处理、0 帧回放——`since=0` 不再表示全量（EventSource 自动重连不带 query），不声明 SSE id/Last-Event-ID 协议。
 
-客户端（`src/client/notify/session.ts`）三条刻意语义（`:9-13` 注释）：重连必须带 since（EventSource 自动重连不携带 query，不带就丢断线期间事件）；只有**解析成功**的帧才刷新 lastActivity（畸形帧不该让半开检测失效）；重连最小间隔防 onerror 与看门狗互相触发成重连风暴。常量：`WATCHDOG_MS = 60000`（`:16`）、检查起始延迟 `WATCHDOG_ARM_MS = 60000+5000`（`:19`，比窗口长 5s 避免边界误判）、`RECONNECT_MIN_GAP_MS = 5000`（`:22`）。`lastSeq` 既是去重水位又是 since 起点——两者必须同源，否则要么重复提醒、要么漏帧（`:53-54`）；`seq <= lastSeq` 丢弃（`:98`）。可见性恢复也触发重连。刷新页面重建内存水位，不能承诺跨刷新 exactly-once。
+客户端（`src/client/notify/session.ts`）四条刻意语义（`:9-21` 注释）：重连必须带 since（EventSource 自动重连不携带 query，不带就丢断线期间事件）；首连无已见水位（`lastSeq=0`）则不带 since，服务端按新会话处理、不回放旧帧；只有**解析成功**的帧才刷新 lastActivity（畸形帧不该让半开检测失效）；onerror 一律先 close 旧连接再自调度重连（`:180-184`），节流只把重连往后推（`:110-125`），不让 EventSource 原生重连裸奔丢帧。hello 三态（`:56-76` readHello / `:143-147` applyHello）：fresh 用 `hello.seq` 播种水位并丢弃随后回放；resume（covered=true）**不把水位抬到 hello.seq**，否则回放帧会被去重挡掉；gap（covered=false 或序号回退）抬到 hello.seq、丢弃回放帧并只提示一次「可能错过」，不拉 /history 计数；旧服务端无 hello 时回落逐帧 seq 去重、不伪造缺口。常量：`WATCHDOG_MS = 60000`（`:24`）、检查起始延迟 `WATCHDOG_ARM_MS = 60000+5000`（`:27`，比窗口长 5s 避免边界误判）、`RECONNECT_MIN_GAP_MS = 5000`（`:30`）。`lastSeq` 既是去重水位又是 since 起点——两者必须同源，否则要么重复提醒、要么漏帧（`:84-86`）；0 表示无水位，有水位时才按 `seq <= lastSeq` 丢弃（`:171`）。可见性恢复也触发重连。刷新页面重建内存水位（无水位=新会话，不回放旧帧），不能承诺跨刷新 exactly-once。
 
 共享 `shared/sse-hub.js#createSseHub` 管句柄/心跳/回收，不设连接数硬上限；stalled 回收与 maxAge 空闲轮换处理不同残留。health 给聚合 sseEvicts，不给逐连接明细。句柄数不是在线设备数或送达数。重启清 replay；序号写失败不阻塞广播，故仍有重启后水位回退与补拉窗口丢失的边界。
 

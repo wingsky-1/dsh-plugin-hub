@@ -57,7 +57,7 @@ function registerRouteAndCapabilities(): void {
     const body = parseBody<HealthBody>(res.body);
     // 键集精确：多一个少一个都说明客户端与实现分叉了。
     expect(Object.keys(body).sort()).toEqual(
-      ["capabilities", "ok", "platform", "plugin", "sseEvicts"].sort(),
+      ["capabilities", "ok", "platform", "plugin", "sseEvicts", "sseReplay"].sort(),
     );
     expect(body.ok).toBe(true);
     expect(body.plugin).toBe("dsh-notifier");
@@ -70,6 +70,8 @@ function registerRouteAndCapabilities(): void {
       destroyed: 0,
       dispose: 0,
     });
+    // 回放窗口端点只在 /health 诊断面：刚装配时是空窗口。
+    expect(body.sseReplay).toEqual({ from: null, to: null });
     // 能力面结论取决于跑测机器有没有桌面会话，钉死具体值只会得到一条跟环境跑的假判据；
     // 这里判值域与形状，明细面（checked/players/remediation）由 /diagnostics 的用例判。
     expect(VERDICTS).toContain(body.capabilities.host.verdict);
@@ -425,16 +427,27 @@ describe("真实 HTTP 面（真实宿主 + 真实 loopback socket）", () => {
 });
 
 describe("真实 SSE 面", () => {
-  it("真实连接先收到开流锚点，投递后在真实连接上收到 notify 帧", async () => {
+  it("真实连接先收到开流锚点与 hello，投递后在真实连接上收到 notify 帧", async () => {
     const { root, port } = await mount();
     const connection = await openSse(port, "/api/dsh-notifier/events");
     try {
       // 心跳是 30 秒级，不真等：开流锚点（注释帧）就是「响应头已被立刻 flush」的可见证据
       // ——少了它客户端要等到第一个心跳才从 CONNECTING 进入 OPEN。
       await pollUntil(() => connection.raw().includes(": connected"), "开流锚点到场", 10_000);
+      await pollUntil(() => connection.frames("hello").length >= 1, "hello 前导到场", 10_000);
+      // hello 在回放/业务帧之前，且报的是连接时的高水位（本轮锚点）。
+      expect(connection.frames("hello")[0]).toEqual({
+        type: "hello",
+        seq: seqAnchor,
+        covered: true,
+      });
 
       await serviceOf(root).send({ kind: "done", title: "端到端标题", body: "端到端正文" });
       await pollUntil(() => connection.frames().length >= 1, "帧到达真实连接", 10_000);
+      // hello 在回放/业务帧之前。
+      expect(connection.raw().indexOf('"type":"hello"')).toBeLessThan(
+        connection.raw().indexOf('"type":"notify"'),
+      );
 
       expect(connection.frames()[0]).toEqual({
         type: "notify",
@@ -447,6 +460,10 @@ describe("真实 SSE 面", () => {
         // 种下的浏览器条目 `whenVisible:false`：展示条件随帧下发，值就是条目里那一个。
         whenVisible: false,
       });
+
+      // /health 的窗口端点是真实缓冲的投影（from=to=这一帧），且不上线协议（hello 键集在单测里判）。
+      const health = parseBody<HealthBody>((await send(port, "/api/dsh-notifier/health")).body);
+      expect(health.sseReplay).toEqual({ from: seqAnchor + 1, to: seqAnchor + 1 });
     } finally {
       connection.close();
     }

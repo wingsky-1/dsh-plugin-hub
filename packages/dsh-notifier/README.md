@@ -472,7 +472,7 @@ settings `describe()` 的已注册分节与更早的自建 `dsh-notifier.json`�
 
 #### `/events`
 
-SSE 通知帧（浏览器 EventSource 订阅；`?since=<seq>` 断线补拉）。非回环连接必须
+SSE 通知帧（浏览器 EventSource 订阅）。每次连接顺序为注释锚点 → `hello {seq, covered}` → 补拉帧 → 进入广播面：`seq` 是服务端当前高水位，`covered` 表示显式水位是否被回放窗口完整覆盖（窗口最多最近 200 条且 5 分钟内）。显式 `?since=<seq>`（>0）断线补拉；缺省、非法或 0 一律按**无水位=新会话**处理、不回放旧帧——`since=0` 不再表示全量。客户端按 hello 三态处理：fresh（无水位）用 `hello.seq` 播种并丢弃回放帧；resume（covered）不抬水位，让补拉帧按 seq 通过；gap（未覆盖或服务端序号回退）抬到高水位、丢弃回放帧，并提示一次「可能错过」；旧服务端无 hello 时回落逐帧 seq 去重。`onerror` 一律先关旧连接再自调度重连带 `since`（节流只延迟），不让 EventSource 原生重连裸奔。非回环连接必须
 通过官方认证并绑定 admitted Peer 生命周期；未认证或绑定失败不会开流。
 
 #### `/test`
@@ -495,7 +495,7 @@ GET 动态 kind 清单（含确认态）；POST `{kind, confirmed}` 写确认（
 
 #### `/health`
 
-健康检查（`{ok, plugin, platform, sseEvicts, capabilities}`；`capabilities.host` 是**摘要**：结论与两个维度的状态，常量大小）
+健康检查（`{ok, plugin, platform, sseEvicts, sseReplay, capabilities}`；`capabilities.host` 是**摘要**：结论与两个维度的状态，常量大小）。`sseReplay.from/to` 是 TTL 过滤后的回放窗口端点（即 replayFrom/replayTo），只在这里排障可见，不上线协议。
 
 #### `/diagnostics`
 
@@ -535,7 +535,7 @@ GET 动态 kind 清单（含确认态）；POST `{kind, confirmed}` 写确认（
 
 - 自播节流：`PLAY_THROTTLE_MS` 为 1500 毫秒，覆盖通知音与只响不弹两条自播路径，试听不受限（`src/client/notify/audio.ts` 的 `gate()`）。
 - 手势解锁：浏览器自动播放策略要求一次用户交互，页面首次任意点击调用 `unlock()` 解锁 AudioContext；试听为显式解锁加绕过节流的手势内操作（`src/client/index.tsx`）。
-- 帧通路：裁决管线经组合根的本地 `FrameBus` 发帧（`src/index.ts`），浏览器出口经 `onFrame` 订阅后由 SSE 路由 `/api/dsh-notifier/events` 下发；客户端用 EventSource 订阅，重连主动带 `?since=<seq>` 补拉并按 seq 去重（`src/client/notify/session.ts`）。
+- 帧通路：裁决管线经组合根的本地 `FrameBus` 发帧（`src/index.ts`），浏览器出口经 `onFrame` 订阅后由 SSE 路由 `/api/dsh-notifier/events` 下发；客户端用 EventSource 订阅，每次连接先收 `hello {seq, covered}`，重连主动带 `?since=<seq>` 补拉（首连无水位不带 since，服务端不回放旧帧）并按 seq 去重；覆盖不了的缺口提示一次「可能错过」（`src/client/notify/session.ts`）。
 - LAN 访问复用官方 connection 的认证与 Host/Origin 围栏；插件不再依赖额外反向代理把来源改写成 loopback。
 
 ### 卸载插件（remove）

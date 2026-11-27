@@ -79,6 +79,8 @@ export const zh = {
   // 测试/清理动作
   testSent: "测试通知已发送（服务端未释放句柄 {n} 条）",
   testFail: "发送测试通知失败：{msg}{hint}",
+  // SSE 会话缺口提示（hello.covered=false）：一次缺口一条，不拉历史计数。
+  sseGap: "连接中断，可能有通知未展示；可在通知历史中查看。",
   // 请求层失败（400/408/429/中断）走独立结果行，那一行此前直接写英文 `failure.message`（#1016 残留 4）。
   // 形态与 testFail 同族：本地化前缀 + 原文细节，`{msg}` 留宿主原话供排查。
   testRequestFail: "测试请求失败：{msg}{hint}",
@@ -406,6 +408,8 @@ export const en: Record<NotifierLocaleKey, string> = {
   conflictLoadedLatest: "Loaded latest configuration",
   testSent: "Test notification sent ({n} unreleased server handles)",
   testFail: "Failed to send test notification: {msg}{hint}",
+  sseGap:
+    "Connection interrupted — some notifications may not have been shown. Check notification history.",
   testRequestFail: "Test request failed: {msg}{hint}",
   cleared: "Cleared {n} history entries",
   clearFail: "Clear failed: {msg}{hint}",

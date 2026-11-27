@@ -19,7 +19,15 @@ export type StreamEvent =
        *  0.2.3 的帧没有这个字段，不读它的旧客户端不受影响。 */
       whenVisible: boolean;
     }
-  | { type: "ping" };
+  | { type: "ping" }
+  | {
+      /** 每次连接的前导帧：先于回放发出，旧客户端忽略未知 type（行为不变）。 */
+      type: "hello";
+      /** 服务端当前高水位；客户端 fresh 态拿它播种 `lastSeq`，之后的重连才有 `since` 可带。 */
+      seq: number;
+      /** `?since` 请求的水位是否被回放窗口（TTL + 条数上限）完整覆盖。客户端不做窗口算术。 */
+      covered: boolean;
+    };
 
 /** 流块的装配入参。 */
 export interface StreamDeps {
@@ -42,4 +50,6 @@ export interface StreamDeps {
 export interface StreamBuildPort {
   /** 打开一次流面。**抛错即建面失败**，由调用方整单回滚（此时本块的 `installed` 已翻成 true）。 */
   open(file: string): { readonly seq: number; readonly hub: SseHub };
+  /** 当前时刻（ms epoch）。TTL 回放窗口与帧 `ts` 都用它：注入假钟才能在单测里跨 5 分钟边界。 */
+  now(): number;
 }
