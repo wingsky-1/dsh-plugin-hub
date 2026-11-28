@@ -132,6 +132,8 @@ describe("SSE 会话：连接与 since 补拉", () => {
     expect(h.sources).toHaveLength(2);
 
     h.emit({ type: "hello", seq: 7, covered: true });
+    // 追平（lastSeq === hello.seq）没有要补的帧，不算缺口。
+    expect(h.gaps).toEqual([]);
     h.error();
     // 旧连接当场关闭；新连接要等窗口到点，而不是由 EventSource 自己重连。
     expect(h.sources).toHaveLength(2);

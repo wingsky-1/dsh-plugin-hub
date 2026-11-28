@@ -371,7 +371,7 @@ describe("hello：每次连接的水位前导（顺序 CONNECTED → hello → �
 });
 
 describe("回放窗口：5 分钟 TTL（与 200 条上限并列的有界窗口）", () => {
-  it("4:59 内的帧仍回放，超过 5:00 的不回放（TTL 边界）", async () => {
+  it("4:59 内仍回放、恰好 5:00 仍在窗口内、超过 5:00 不回放（TTL 边界等号语义）", async () => {
     const clock = { now: 1_000_000 };
     const { routes, publish } = assembleWithClock(clock);
     await publishAndSettle(publish, frame({ title: "旧一" }));
@@ -384,7 +384,13 @@ describe("回放窗口：5 分钟 TTL（与 200 条上限并列的有界窗口�
     ]);
     expect(framesOf(atBoundary.rec.text).map((event) => event.title)).toEqual(["旧二"]);
 
-    clock.now += 2_000;
+    // 恰好 5:00：cutoff === 帧时间戳，判据是 `ts >= cutoff` 而非 `>`，帧仍在窗口内。
+    clock.now += 1_000;
+    const atTtl = connect(routes, "/api/dsh-notifier/events?since=1");
+    expect(framesOf(atTtl.rec.text, "hello")).toEqual([{ type: "hello", seq: 2, covered: true }]);
+    expect(framesOf(atTtl.rec.text).map((event) => event.title)).toEqual(["旧二"]);
+
+    clock.now += 1_000;
     const overTtl = connect(routes, "/api/dsh-notifier/events?since=1");
     expect(framesOf(overTtl.rec.text, "hello")).toEqual([
       { type: "hello", seq: 2, covered: false },

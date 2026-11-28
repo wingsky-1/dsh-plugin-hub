@@ -178,9 +178,12 @@ class StreamHub {
     });
     res.write(CONNECTED);
     const since = sinceOf(req);
+    // 一次取时刻、hello 与回放共用：两次取时刻会落在 TTL 边界的两侧，hello 说「覆盖」
+    // 而回放却已把帧滤掉（或反之），同一次握手里的窗口必须自洽。
+    const now = this.build.now();
     // 顺序是契约：CONNECTED（flush 响应头）→ hello（水位前导）→ 回放 → register（进入广播面）。
-    res.write(encode(this.hello(since)));
-    for (const event of this.since(since)) res.write(encode(event));
+    res.write(encode(this.hello(since, now)));
+    for (const event of this.since(since, now)) res.write(encode(event));
     this.hub.register(res);
     return undefined;
   }
@@ -217,13 +220,13 @@ class StreamHub {
   }
 
   /** 序号大于 `since` 且在 TTL 窗口内的帧，按序；无水位（`undefined`，即新会话）时一帧都不回放。 */
-  private since(value: number | undefined): NotifyEvent[] {
+  private since(value: number | undefined, now: number): NotifyEvent[] {
     if (value === undefined) return [];
-    return this.window().filter((event) => event.seq > value);
+    return this.window(now).filter((event) => event.seq > value);
   }
 
   /** 当前连接该收到的 hello：高水位 + 请求水位是否被回放窗口完整覆盖。 */
-  private hello(since: number | undefined): Extract<StreamEvent, { type: "hello" }> {
+  private hello(since: number | undefined, now: number): Extract<StreamEvent, { type: "hello" }> {
     const seq = this.seq;
     if (since === undefined || since === seq) {
       // 无水位 = 没有要补的东西；刚好追平 = 也不缺。
@@ -233,7 +236,7 @@ class StreamHub {
       // 序号回退（如 seq.json 丢失后重启）：客户端水位比服务端还新，窗口不可能覆盖。
       return { type: "hello", seq, covered: false };
     }
-    const window = this.window();
+    const window = this.window(now);
     const from = window[0]?.seq;
     const to = window[window.length - 1]?.seq;
     // 覆盖条件：窗口里有 since+1 起的所有帧（from <= since+1），且最后一帧就是当前高水位（to === seq）。
@@ -243,16 +246,16 @@ class StreamHub {
 
   /** TTL 过滤后的窗口端点：只供 `/health` 诊断（replayFrom / replayTo），不上线协议。空窗口为 null。 */
   replayBounds(): { readonly from: number | null; readonly to: number | null } {
-    const window = this.window();
+    const window = this.window(this.build.now());
     return {
       from: window[0]?.seq ?? null,
       to: window[window.length - 1]?.seq ?? null,
     };
   }
 
-  /** 最近 `REPLAY_LIMIT` 条里仍在 5 分钟内的帧，按序。 */
-  private window(): NotifyEvent[] {
-    const cutoff = this.build.now() - REPLAY_TTL_MS;
+  /** 最近 `REPLAY_LIMIT` 条里仍在 5 分钟内的帧，按序（`now` 由调用方取一次，同一次握手共用）。 */
+  private window(now: number): NotifyEvent[] {
+    const cutoff = now - REPLAY_TTL_MS;
     return this.replay.filter((event) => event.ts >= cutoff);
   }
 }
