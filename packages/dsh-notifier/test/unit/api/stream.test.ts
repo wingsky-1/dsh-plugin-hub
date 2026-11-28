@@ -19,6 +19,7 @@ import { dirname } from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ApiDeps, OutgoingFrame } from "../../../src/server/api/deps.ts";
+import { createSseHub } from "../../../../../shared/sse-hub.js";
 import { DEFAULT_CONFIG } from "../../../src/server/config/impl/model/index.ts";
 import {
   SEQ_FILE_NAME,
@@ -47,7 +48,8 @@ const { finalizeRequest, barkTarget, browserTarget, systemTarget, webhookTarget 
   await import("../../../src/server/pipeline/interface.ts");
 const { dryRunTarget } = await import("../../../src/server/channels/interface.ts");
 // 动态导入而不是顶层静态 import：流实例的落盘路径在构造时定下，静态导入会先于上面的临时 home 求值。
-const { streamHub } = await import("../../../src/server/api/impl/stream/index.ts");
+const { installStreamBuild, releaseStreamBuild, streamHub } =
+  await import("../../../src/server/api/impl/stream/index.ts");
 
 /** 视图四件事实：api 域只把它原样透传给设置端点，形状够用即可。 */
 const VIEW = { user: {}, revision: 1, writable: true, effective: {} };
@@ -58,6 +60,8 @@ beforeEach(() => {
 
 afterEach(() => {
   releaseApi();
+  // 建面端口是模块级单例状态：不复位的话，注入了假钟的用例会把时钟漏给下一个用例。
+  releaseStreamBuild();
 });
 
 afterAll(() => {
@@ -175,6 +179,22 @@ function assemble(
   };
 }
 
+/** 装入可注入的假钟后再装配：TTL 窗口判据不能靠真实等待（5 分钟级）。 */
+function assembleWithClock(clock: { now: number }) {
+  installStreamBuild({
+    now: () => clock.now,
+    open(file) {
+      const read = readTextFileSync(file);
+      const parsed = read.ok ? Number.parseInt(read.text.trim(), 10) : 0;
+      return {
+        seq: Number.isFinite(parsed) && parsed > 0 ? parsed : 0,
+        hub: createSseHub({ heartbeatMs: 30_000 }),
+      };
+    },
+  });
+  return assemble();
+}
+
 /** 发布一帧并等序号落盘：写入是 fire-and-forget，不等就会串到下一个用例的装配里。 */
 async function publishAndSettle(publish: (payload: OutgoingFrame) => void, payload: OutgoingFrame) {
   const before = readSeqFromDisk();
@@ -218,7 +238,7 @@ function connect(
 }
 
 /** 从响应文本里取出全部 `data:` 帧（注释锚点与空行不算）。 */
-function framesOf(text: string): Array<Record<string, unknown>> {
+function rawFramesOf(text: string): Array<Record<string, unknown>> {
   return text
     .split("\n\n")
     .map((chunk) => chunk.trim())
@@ -226,12 +246,19 @@ function framesOf(text: string): Array<Record<string, unknown>> {
     .map((chunk) => JSON.parse(chunk.slice("data: ".length)) as Record<string, unknown>);
 }
 
+/** 按线协议 type 过滤；默认只取 notify（hello / ping 不是通知帧，混进来会让旧判据数错帧）。 */
+function framesOf(text: string, type = "notify"): Array<Record<string, unknown>> {
+  return rawFramesOf(text).filter((frame) => frame.type === type);
+}
+
 describe("线协议：内部帧 → 客户端读的字段名", () => {
   it("弹窗帧带 message 与序号，且不带 playOnly（客户端判 `=== true`，缺席即照常弹）", async () => {
     const { routes, publish } = assemble();
+    // 无 since 的连接是新会话、不回放旧帧：先连上，再从这条连接上收帧。
+    const { rec } = connect(routes);
     await publishAndSettle(publish, frame({ title: "标题", body: "正文" }));
 
-    const [event] = framesOf(connect(routes).rec.text);
+    const [event] = framesOf(rec.text);
     expect(event!.type).toBe("notify");
     expect(event!.seq).toBe(1);
     expect(event!.kind).toBe("done");
@@ -244,9 +271,10 @@ describe("线协议：内部帧 → 客户端读的字段名", () => {
 
   it("pop=false 的帧带 playOnly: true（只响不弹是客户端唯一的分支依据）", async () => {
     const { routes, publish } = assemble();
+    const { rec } = connect(routes);
     await publishAndSettle(publish, frame({ pop: false }));
 
-    const [event] = framesOf(connect(routes).rec.text);
+    const [event] = framesOf(rec.text);
     expect(event!.playOnly).toBe(true);
   });
 
@@ -257,6 +285,151 @@ describe("线协议：内部帧 → 客户端读的字段名", () => {
     expect(rec.headers["content-type"]).toBe("text/event-stream; charset=utf-8");
     expect(rec.headers["x-accel-buffering"]).toBe("no");
     expect(rec.text.startsWith(": connected\n\n")).toBe(true);
+  });
+});
+
+describe("hello：每次连接的水位前导（顺序 CONNECTED → hello → 回放 → 注册）", () => {
+  it("hello 先于回放帧到达，且只带 {seq, covered}（窗口端点不上线协议）", async () => {
+    const { routes, publish } = assemble();
+    await publishAndSettle(publish, frame());
+    await publishAndSettle(publish, frame());
+
+    const { rec } = connect(routes, "/api/dsh-notifier/events?since=1");
+    expect(rec.text.startsWith(": connected\n\n")).toBe(true);
+
+    const all = rawFramesOf(rec.text);
+    expect(all.map((event) => event.type)).toEqual(["hello", "notify"]);
+    expect(all[0]).toEqual({ type: "hello", seq: 2, covered: true });
+    // replayFrom / replayTo 只进 /health：客户端不做窗口算术，也不该在线上看到它们。
+    expect(Object.keys(all[0]!).sort()).toEqual(["covered", "seq", "type"]);
+    expect(all[1]!.seq).toBe(2);
+    // 注册发生在回放之后：回到调用方时连接已在表里。
+    expect(streamHub.size()).toBe(1);
+  });
+
+  it("since 缺失、0、非法或负数一律按无水位：hello 报当前高水位、covered=true、回放 0 帧", async () => {
+    const { routes, publish } = assemble();
+    await publishAndSettle(publish, frame());
+    await publishAndSettle(publish, frame());
+
+    for (const url of [
+      "/api/dsh-notifier/events",
+      "/api/dsh-notifier/events?since=0",
+      "/api/dsh-notifier/events?since=abc",
+      "/api/dsh-notifier/events?since=-3",
+    ]) {
+      const { rec } = connect(routes, url);
+      expect(framesOf(rec.text, "hello"), url).toEqual([{ type: "hello", seq: 2, covered: true }]);
+      expect(framesOf(rec.text), url).toEqual([]);
+    }
+  });
+
+  it("since === seq：已追平，covered=true 且不回放", async () => {
+    const { routes, publish } = assemble();
+    await publishAndSettle(publish, frame());
+    await publishAndSettle(publish, frame());
+
+    const { rec } = connect(routes, "/api/dsh-notifier/events?since=2");
+    expect(framesOf(rec.text, "hello")).toEqual([{ type: "hello", seq: 2, covered: true }]);
+    expect(framesOf(rec.text)).toEqual([]);
+  });
+
+  it("since > seq（序号回退）：covered=false，不能把回退后的空窗口伪装成已覆盖", async () => {
+    const { routes, publish } = assemble();
+    await publishAndSettle(publish, frame());
+
+    const { rec } = connect(routes, "/api/dsh-notifier/events?since=5");
+    expect(framesOf(rec.text, "hello")).toEqual([{ type: "hello", seq: 1, covered: false }]);
+    expect(framesOf(rec.text)).toEqual([]);
+  });
+
+  it("空缓冲（重启后 seq.json 高水位仍在）：since < seq 报 covered=false，不静默当已覆盖", () => {
+    const file = notifierFile(SEQ_FILE_NAME);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, "5\n");
+
+    const { routes } = assemble();
+    const { rec } = connect(routes, "/api/dsh-notifier/events?since=2");
+    expect(framesOf(rec.text, "hello")).toEqual([{ type: "hello", seq: 5, covered: false }]);
+    expect(framesOf(rec.text)).toEqual([]);
+  });
+
+  it("窗口被条数上限挤出旧帧：since 早于窗口起点即 covered=false（缺口必须显式）", async () => {
+    // 把刻度种到 100，这一批帧的序号从 101 起；since=50 需要 51..，而缓冲最早只有 101。
+    const file = notifierFile(SEQ_FILE_NAME);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, "100\n");
+
+    const { routes, publish } = assemble();
+    await publishAndSettle(publish, frame());
+
+    const { rec } = connect(routes, "/api/dsh-notifier/events?since=50");
+    expect(framesOf(rec.text, "hello")).toEqual([{ type: "hello", seq: 101, covered: false }]);
+    // 窗口内的帧仍然照常回放：covered 只描述缺口，不关闭补拉。
+    expect(framesOf(rec.text).map((event) => event.seq)).toEqual([101]);
+  });
+});
+
+describe("回放窗口：5 分钟 TTL（与 200 条上限并列的有界窗口）", () => {
+  it("4:59 内仍回放、恰好 5:00 仍在窗口内、超过 5:00 不回放（TTL 边界等号语义）", async () => {
+    const clock = { now: 1_000_000 };
+    const { routes, publish } = assembleWithClock(clock);
+    await publishAndSettle(publish, frame({ title: "旧一" }));
+    await publishAndSettle(publish, frame({ title: "旧二" }));
+
+    clock.now += 4 * 60_000 + 59_000;
+    const atBoundary = connect(routes, "/api/dsh-notifier/events?since=1");
+    expect(framesOf(atBoundary.rec.text, "hello")).toEqual([
+      { type: "hello", seq: 2, covered: true },
+    ]);
+    expect(framesOf(atBoundary.rec.text).map((event) => event.title)).toEqual(["旧二"]);
+
+    // 恰好 5:00：cutoff === 帧时间戳，判据是 `ts >= cutoff` 而非 `>`，帧仍在窗口内。
+    clock.now += 1_000;
+    const atTtl = connect(routes, "/api/dsh-notifier/events?since=1");
+    expect(framesOf(atTtl.rec.text, "hello")).toEqual([{ type: "hello", seq: 2, covered: true }]);
+    expect(framesOf(atTtl.rec.text).map((event) => event.title)).toEqual(["旧二"]);
+
+    clock.now += 1_000;
+    const overTtl = connect(routes, "/api/dsh-notifier/events?since=1");
+    expect(framesOf(overTtl.rec.text, "hello")).toEqual([
+      { type: "hello", seq: 2, covered: false },
+    ]);
+    expect(framesOf(overTtl.rec.text)).toEqual([]);
+
+    // since 恰好等于高水位时没有「需要的帧」：TTL 再久也不构成缺口。
+    const caughtUp = connect(routes, "/api/dsh-notifier/events?since=2");
+    expect(framesOf(caughtUp.rec.text, "hello")).toEqual([
+      { type: "hello", seq: 2, covered: true },
+    ]);
+  });
+
+  it("TTL 掐掉中间帧时报 covered=false：旧帧不可回放，不能伪装成已覆盖", async () => {
+    const clock = { now: 1_000_000 };
+    const { routes, publish } = assembleWithClock(clock);
+    for (let index = 1; index <= 3; index += 1) {
+      await publishAndSettle(publish, frame({ title: `旧 ${index}` }));
+    }
+    clock.now += 5 * 60_000 + 1_000;
+    await publishAndSettle(publish, frame({ title: "新" }));
+
+    const { rec } = connect(routes, "/api/dsh-notifier/events?since=1");
+    // 需要 2..4，但 2、3 已过期，窗口只能从 4 开始：缺口显式上报。
+    expect(framesOf(rec.text, "hello")).toEqual([{ type: "hello", seq: 4, covered: false }]);
+    expect(framesOf(rec.text).map((event) => event.seq)).toEqual([4]);
+  });
+
+  it("replayFrom / replayTo 是 TTL 过滤后的窗口端点（只供 /health 诊断）", async () => {
+    const clock = { now: 1_000_000 };
+    const { publish } = assembleWithClock(clock);
+    for (let index = 1; index <= 2; index += 1) {
+      await publishAndSettle(publish, frame());
+    }
+    expect(streamHub.replayBounds()).toEqual({ from: 1, to: 2 });
+
+    clock.now += 5 * 60_000 + 1_000;
+    await publishAndSettle(publish, frame());
+    expect(streamHub.replayBounds()).toEqual({ from: 3, to: 3 });
   });
 });
 
@@ -342,9 +515,10 @@ describe("native LAN SSE：绑定官方 admitted Peer 生命周期", () => {
 describe("序号：落盘并跨装配接着数", () => {
   it("没有刻度文件时第一帧从 1 起算，并把刻度写到盘上", async () => {
     const { routes, publish } = assemble();
+    const { rec } = connect(routes);
     await publishAndSettle(publish, frame());
 
-    expect(framesOf(connect(routes).rec.text).map((event) => event.seq)).toEqual([1]);
+    expect(framesOf(rec.text).map((event) => event.seq)).toEqual([1]);
     expect(readSeqFromDisk()).toBe(1);
   });
 
@@ -354,9 +528,10 @@ describe("序号：落盘并跨装配接着数", () => {
 
     releaseApi();
     const second = assemble();
+    const { rec } = connect(second.routes);
     await publishAndSettle(second.publish, frame());
 
-    expect(framesOf(connect(second.routes).rec.text).map((event) => event.seq)).toEqual([2]);
+    expect(framesOf(rec.text).map((event) => event.seq)).toEqual([2]);
   });
 
   // 刻度文件是磁盘上的东西：断电截断、被别的工具写过都会留下脏值。负刻度若原样采纳，新帧的序号
@@ -371,10 +546,11 @@ describe("序号：落盘并跨装配接着数", () => {
       writeFileSync(file, text);
 
       const { routes, publish } = assemble();
+      const { rec } = connect(routes);
       publish(frame());
       await pollUntil(() => readSeqFromDisk() === 1, "脏刻度被当成 0 之后第一帧写回 1");
 
-      expect(framesOf(connect(routes).rec.text).map((event) => event.seq)).toEqual([1]);
+      expect(framesOf(rec.text).map((event) => event.seq)).toEqual([1]);
     },
   );
 });
@@ -390,20 +566,18 @@ describe("断线补拉：?since=N", () => {
     expect(replayed.map((event) => event.seq)).toEqual([2, 3]);
   });
 
-  it("since 缺失或非法一律当 0：宁可多回放，不能因为一个脏参数把补拉窗口关掉", async () => {
+  it("since 缺失、非法或非正数一律按「无水位」处理：一帧都不回放（宁可静默，不能把旧通知倒给刚打开的页面）", async () => {
     const { routes, publish } = assemble();
     await publishAndSettle(publish, frame());
     await publishAndSettle(publish, frame());
 
     for (const url of [
       "/api/dsh-notifier/events",
+      "/api/dsh-notifier/events?since=0",
       "/api/dsh-notifier/events?since=abc",
       "/api/dsh-notifier/events?since=-3",
     ]) {
-      expect(
-        framesOf(connect(routes, url).rec.text).map((event) => event.seq),
-        url,
-      ).toEqual([1, 2]);
+      expect(framesOf(connect(routes, url).rec.text), url).toEqual([]);
     }
   });
 });
@@ -423,26 +597,40 @@ describe("回放缓冲：上限 200 条", () => {
   // 缓冲无上限会随进程寿命线性涨；淘汰错对象（挤掉最新的那条）会让断线重连恰好丢掉最新一条通知，
   // 多淘汰一条则窗口比声明的窄。窗口长度与「挤掉哪一头」都只有把边界算清才看得出来。
   it("到上限不淘汰、超出即淘汰最旧的：200 条时首帧还在，第 201 条把首帧挤出窗口", async () => {
+    // 无 since 的连接不再回放旧帧，故用显式 since=N 观察窗口：把盘上刻度种到 100，
+    // 这一批帧的序号从 101 起，`?since=100` 恰好索取整个缓冲。
+    const file = notifierFile(SEQ_FILE_NAME);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, "100\n");
+
     const { routes, publish } = assemble();
     for (let index = 1; index <= 200; index += 1) {
       await publishAndSettle(publish, frame({ title: `第 ${index} 条` }));
     }
 
-    const atLimit = framesOf(connect(routes).rec.text);
+    const atLimit = framesOf(connect(routes, "/api/dsh-notifier/events?since=100").rec.text);
     expect(atLimit).toHaveLength(200);
-    expect(atLimit[0]!.seq).toBe(1);
+    expect(atLimit[0]!.seq).toBe(101);
     expect(atLimit[0]!.title).toBe("第 1 条");
-    expect(atLimit.at(-1)!.seq).toBe(200);
+    expect(atLimit.at(-1)!.seq).toBe(300);
+    // 窗口起点恰好是 since+1：覆盖边界（>= 而不是 > 的一侧）。
+    expect(
+      framesOf(connect(routes, "/api/dsh-notifier/events?since=100").rec.text, "hello"),
+    ).toEqual([{ type: "hello", seq: 300, covered: true }]);
 
     await publishAndSettle(publish, frame({ title: "第 201 条" }));
 
-    const overLimit = framesOf(connect(routes).rec.text);
+    const overLimit = framesOf(connect(routes, "/api/dsh-notifier/events?since=100").rec.text);
     expect(overLimit).toHaveLength(200);
-    expect(overLimit[0]!.seq).toBe(2);
+    expect(overLimit[0]!.seq).toBe(102);
     expect(overLimit[0]!.title).toBe("第 2 条");
     expect(overLimit.map((event) => event.seq)).toEqual(
-      Array.from({ length: 200 }, (_item, index) => index + 2),
+      Array.from({ length: 200 }, (_item, index) => index + 102),
     );
+    // 首帧被挤出后窗口起点 102 > since+1：同样的 since 报缺口，不静默。
+    expect(
+      framesOf(connect(routes, "/api/dsh-notifier/events?since=100").rec.text, "hello"),
+    ).toEqual([{ type: "hello", seq: 301, covered: false }]);
   });
 });
 

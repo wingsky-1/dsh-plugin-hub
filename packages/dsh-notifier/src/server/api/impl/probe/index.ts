@@ -202,8 +202,9 @@ export class ProbeEndpoints {
   };
 
   /**
-   * GET /health：宿主平台 + 连接回收计数 + 能力面**摘要**。平台值供客户端写系统通道提示（不能拿浏览器 OS 猜）；
-   * `sseEvicts` 是 README 承诺的 churn 排障面——只有聚合计数（常量大小），per-conn 明细不上这里。
+   * GET /health：宿主平台 + 连接回收计数 + 回放窗口端点 + 能力面**摘要**。平台值供客户端写系统通道提示
+   * （不能拿浏览器 OS 猜）；`sseEvicts` 是 README 承诺的 churn 排障面——只有聚合计数（常量大小），
+   * per-conn 明细不上这里；`sseReplay` 的 from/to（即 replayFrom/replayTo）只在这里暴露，不上线协议。
    * 能力面同样只给结论与维度状态（常量大小），明细（探测了哪些维度、缺哪个包）归 `/diagnostics`。
    */
   readonly health: RouteHandler = async (
@@ -216,6 +217,7 @@ export class ProbeEndpoints {
       plugin: "dsh-notifier",
       platform: this.channels.hostPlatform(),
       sseEvicts: streamHub.evictStats(),
+      sseReplay: streamHub.replayBounds(),
       capabilities: { host: hostSummary(host) },
     });
   };

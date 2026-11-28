@@ -178,6 +178,7 @@ const FAILS_TO_BUILD: StreamBuildPort = {
   open() {
     throw new Error("安装失败：流面建不起来");
   },
+  now: () => Date.now(),
 };
 
 /** 各能力面返回带标记的值：端点回给我的标记来自哪一份面，一读就知道有没有接错线。 */
@@ -373,9 +374,16 @@ describe("接线：端点与能力面一一对应", () => {
     expect(diagnosticsHost.capabilities.host).toEqual(CAPABILITIES);
   });
 
-  it("装配同时接上帧入口：帧经 /events 回放给新连接（接线断了页面永远收不到通知）", async () => {
+  it("装配同时接上帧入口：帧经 /events 推给已建立的连接（接线断了页面永远收不到通知）", async () => {
     const { hub, frames } = assemble();
     expect(frames.handlers).toHaveLength(1);
+
+    // 无 since 的连接是新会话、不回放旧帧：先连上，再经帧入口发帧。
+    const { rec } = await request(
+      hub.routes,
+      "/api/dsh-notifier/events",
+      makeReq({ url: "/api/dsh-notifier/events" }),
+    );
     frames.handlers[0]!({
       kind: "done",
       frame: {
@@ -387,11 +395,6 @@ describe("接线：端点与能力面一一对应", () => {
       },
     });
 
-    const { rec } = await request(
-      hub.routes,
-      "/api/dsh-notifier/events",
-      makeReq({ url: "/api/dsh-notifier/events" }),
-    );
     expect(rec.headers["content-type"]).toBe("text/event-stream; charset=utf-8");
     expect(rec.text).toContain("标题");
   });

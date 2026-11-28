@@ -1960,6 +1960,11 @@ export function apply(ctx: ClientContext): void {
           function (payload) {
             handleNotifyFrame(payload, owner);
           },
+          // 缺口只提示一次（每次未覆盖的 hello 一次）；不拉 /history 计数——那有竞态、会低估，
+          // 也不能作为「有没有丢通知」的判据。
+          function () {
+            toast(t("sseGap"));
+          },
         );
       },
       function (session) {

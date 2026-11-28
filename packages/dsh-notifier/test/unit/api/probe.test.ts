@@ -337,6 +337,8 @@ describe("GET /health：报宿主平台、连接回收计数与能力面摘要",
         destroyed: 0,
         dispose: 0,
       },
+      // 回放窗口端点只上 /health 诊断面（未装配 = 空窗口）。
+      sseReplay: { from: null, to: null },
       // 摘要：只给结论与维度状态，明细（checked / players / remediation）归 /diagnostics
       capabilities: {
         host: {

@@ -575,7 +575,7 @@ settings will not lose it.
 
 #### `/events`
 
-SSE notification frames (browser EventSource subscription; `?since=<seq>` replays missed frames after reconnect). Non-loopback connections must pass official authentication and bind to the admitted Peer lifecycle; rejected or lifecycle-binding failures never open a stream.
+SSE notification frames (browser EventSource subscription). Every connection runs comment anchor → `hello {seq, covered}` → replay frames → broadcast registration: `seq` is the server high watermark and `covered` says whether the explicit watermark is fully covered by the replay window (at most the latest 200 frames within 5 minutes). An explicit `?since=<seq>` with seq>0 replays missed frames after reconnect; absent, invalid or 0 means **no watermark / a new session**, so no old frames are replayed — `since=0` no longer means "everything". The client applies the three-state hello: fresh (no watermark) seeds from `hello.seq` and drops replay frames; resume (covered) does not raise the watermark so replay frames pass by seq; gap (uncovered or server seq rollback) raises the watermark, drops replay frames and shows one "may have missed" hint; an old server without hello falls back to per-frame seq dedupe. `onerror` always closes the old connection first and self-schedules a reconnect with `since` (throttling only delays it), so EventSource native reconnects never run bare. Non-loopback connections must pass official authentication and bind to the admitted Peer lifecycle; rejected or lifecycle-binding failures never open a stream.
 
 #### `/test`
 
@@ -595,7 +595,7 @@ GET the dynamic kind list (including confirmation state); POST `{kind, confirmed
 
 #### `/health`
 
-Health check (`{ok, plugin, platform, sseEvicts, capabilities}`; `capabilities.host` is a **summary** — the verdict plus the state of the two dimensions, constant size)
+Health check (`{ok, plugin, platform, sseEvicts, sseReplay, capabilities}`; `capabilities.host` is a **summary** — the verdict plus the state of the two dimensions, constant size). `sseReplay.from/to` are the TTL-filtered replay window bounds (replayFrom/replayTo) exposed here for troubleshooting only, never on the wire.
 
 #### `/diagnostics`
 
@@ -647,7 +647,7 @@ Error mapping (POST /kinds): kind-confirmation CAS retries (≤2) exhausted → 
 
 - Autoplay throttling: `PLAY_THROTTLE_MS` is 1500 ms and covers both autoplay paths (notification tones and sound-only delivery); previews bypass it (`gate()` in `src/client/notify/audio.ts`).
 - Gesture unlock: the browser autoplay policy requires one user interaction — the first click anywhere on the page calls `unlock()` to unlock the AudioContext; previews are in-gesture operations with explicit unlock plus throttle bypass (`src/client/index.tsx`).
-- Frame path: the decision pipeline emits frames through the composition-root-local `FrameBus` (`src/index.ts`), the browser exit subscribes via `onFrame` and serves them over the SSE route `/api/dsh-notifier/events`; the client subscribes with EventSource, actively reconnects with `?since=<seq>` for replay, and dedupes by seq (`src/client/notify/session.ts`).
+- Frame path: the decision pipeline emits frames through the composition-root-local `FrameBus` (`src/index.ts`), the browser exit subscribes via `onFrame` and serves them over the SSE route `/api/dsh-notifier/events`; the client subscribes with EventSource, receives `hello {seq, covered}` first on every connection, actively reconnects with `?since=<seq>` for replay (a first connection has no watermark and sends no `since`, so the server replays nothing), and dedupes by seq; an uncovered gap shows one "may have missed" hint (`src/client/notify/session.ts`).
 - LAN access reuses official connection authentication and the Host/Origin fence; the plugin no longer depends on an extra reverse proxy rewriting the source to loopback.
 
 ### Uninstall plugins (remove)
